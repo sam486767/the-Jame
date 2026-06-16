@@ -33,7 +33,8 @@ MUTATION_WEIGHTS = {
     "REVERSE_DAMAGE": 4, "RANDOM_DAMAGE_SPIKE": 5, "LOW_HP_WIN": 1, "HIGH_HP_WIN": 1,
     "BOMB_INSTALL": 5, "BOMB_ACCELERATE": 5, "BOMB_SLOW": 5, "ENABLE_RPS": 4,
     "INFUSE_POISON": 8, "INFUSE_BURN": 8, "INFUSE_SLEEP": 6, "INFUSE_PARALYZE": 6, "INFUSE_FREEZE": 5,
-    "INFUSE_ACID": 7, "ENABLE_50_50": 2, "DEFUSE_EFFECTS": 3
+    "INFUSE_ACID": 7, "ENABLE_50_50": 2, "DEFUSE_EFFECTS": 3,
+    "PENALTY_SHOOTOUT_LTM": 3, "RED_CARD_LTM": 2
 }
 
 state = {
@@ -190,25 +191,71 @@ def clear_action_space():
         for widget in action_area.winfo_children():
             widget.destroy()
 
+def get_card_design(mutation_key):
+    """
+    Parses a mutation key to strip '_LTM' tags and returns a tuple of layout designs:
+    (display_name, bg_color, border_color, text_color, hover_bg)
+    """
+    display_name = mutation_key
+    is_ltm = False
+    
+    # 1. Handle LTM Tag Extraction
+    if mutation_key.endswith("_LTM"):
+        display_name = mutation_key[:-4]  # Remove "_LTM"
+        is_ltm = True
+        
+    # Format text for UI layout presentation (replace underscores with clean spaces)
+    display_name = display_name.replace("_", " ")
+    
+    # 2. Assign Border Styles and Rarity/Class Colors
+    if is_ltm:
+        # 👾 LIMITED TIME MODE CLASS (Vibrant Neon Purple/Magenta Theme)
+        return display_name, "#2c1a3a", "#e056fd", "#e056fd", "#431f5c"
+    
+    # Keyword classification filters
+    offensive_keywords = ["DAMAGE", "GUNS", "CRIT", "STRIKE", "INFUSE"]
+    vitality_keywords = ["HP", "REGEN", "EQUALISE", "SHIELDS", "STEAL"]
+    chaos_keywords = ["BOMB", "50_50", "RPS", "SWAP", "REVERSE"]
+    
+    if any(kw in mutation_key for kw in offensive_keywords):
+        # 🔥 OFFENSIVE CLASS (Crimson / Red Theme)
+        return display_name, "#2d1414", "#ff4757", "#ff4757", "#4a1c1c"
+        
+    elif any(kw in mutation_key for kw in vitality_keywords):
+        # 🛡️ VITALITY & DEFENSE CLASS (Emerald / Green Theme)
+        return display_name, "#112415", "#2ed573", "#2ed573", "#1b3d22"
+        
+    elif any(kw in mutation_key for kw in chaos_keywords):
+        # 🎲 CHAOS & RISK CLASS (Cyber Gold / Amber Theme)
+        return display_name, "#26210f", "#ffa502", "#ffa502", "#403714"
+        
+    # ⚙️ STANDARD UTILITY CLASS (Sleek Slate Blue Theme)
+    return display_name, "#1e222b", "#70a1ff", "#70a1ff", "#2f3640"
+
+
 def create_graphic_card(parent, title, command_callback):
-    """Generates a high contrast trading-card design wrapper over standard Tkinter interaction layers."""
-    card = tk.Frame(parent, bg="#262626", highlightbackground="#ffcc00", highlightthickness=2, width=160, height=200)
+    """Generates a custom graphic trading-card frame using explicit rarity classes and borders."""
+    # Pull dynamic style configurations from the styling engine
+    display_name, bg_color, border_color, text_color, hover_bg = get_card_design(title)
+    
+    # Core card structural boundary layout frame
+    card = tk.Frame(parent, bg=bg_color, highlightbackground=border_color, highlightthickness=2, width=160, height=200)
     card.pack_propagate(False)
     
-    # Internal element decoration
-    lbl = tk.Label(card, text=title, font=("Courier", 11, "bold"), fg="#ffcc00", bg="#262626", wraplength=140)
+    # Internal centered text decoration
+    lbl = tk.Label(card, text=display_name, font=("Courier", 11, "bold"), fg=text_color, bg=bg_color, wraplength=140)
     lbl.pack(expand=True, fill="both", padx=10, pady=10)
     
-    # Dynamic click-binding setup across the container elements
+    # Click-binding integration (Passes original backend 'title' string, NOT the filtered UI text)
     def trigger_click(e): command_callback(title)
     card.bind("<Button-1>", trigger_click)
     lbl.bind("<Button-1>", trigger_click)
     
-    # Visual hovering feedback
-    card.bind("<Enter>", lambda e: card.config(bg="#3d3d3d"))
-    card.bind("<Leave>", lambda e: card.config(bg="#262626"))
-    lbl.bind("<Enter>", lambda e: card.config(bg="#3d3d3d"))
-    lbl.bind("<Leave>", lambda e: card.config(bg="#262626"))
+    # Hover animations tracking card category colors
+    card.bind("<Enter>", lambda e: card.config(bg=hover_bg))
+    card.bind("<Leave>", lambda e: card.config(bg=bg_color))
+    lbl.bind("<Enter>", lambda e: [card.config(bg=hover_bg), lbl.config(bg=hover_bg)])
+    lbl.bind("<Leave>", lambda e: [card.config(bg=bg_color), lbl.config(bg=bg_color)])
     
     return card
 
