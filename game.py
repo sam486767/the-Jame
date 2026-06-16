@@ -1,3 +1,9 @@
+from pathlib import Path
+import shutil
+
+if Path("updater_new.py").exists():
+    shutil.move("updater_new.py", "updater.py")
+
 import threading
 import random
 import math
