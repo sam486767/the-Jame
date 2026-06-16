@@ -1,32 +1,24 @@
 import threading
-import time
-import updater  # your updater module
-
-running = True
-
-def start_updater():
-    updater.run_updater(lambda: running)
-
-# start updater in background
-threading.Thread(target=start_updater, daemon=True).start()
-
-print("Game started")
-
-try:
-    while True:
-        # YOUR GAME LOOP HERE
-        time.sleep(1)
-
-except KeyboardInterrupt:
-    print("Game closing...")
-    running = False
-
-
-
 import random
 import math
 import sys
+import time
+import updater
 
+running = True
+update_requested = False
+
+
+def request_game_shutdown():
+    global update_requested
+    update_requested = True
+
+
+def start_updater():
+    updater.run_updater(request_game_shutdown)
+
+
+threading.Thread(target=start_updater, daemon=True).start()
 # =========================
 # GAME STATE & WEIGHTS
 # =========================
@@ -464,63 +456,82 @@ def apply_mutation(mutation, who):
     check_game_over()
 
 # =========================
-# GAME LOOP
+# GAME INITIALIZATION
 # =========================
 
 draft_deck()
 mutation_turn_toggle = True
 
-while True:
-    print("\n" + "="*30)
-    print(f"TURN {state['turn']}")
-    print(f"Player HP: {state['player_hp']} | CPU HP: {state['cpu_hp']}")
-    print(f"Base Dmg: {state['base_damage']} | Shield P/C: {state['player_defense']}/{state['cpu_defense']}")
-    print("="*30)
+running = True
+update_requested = False
 
-    # 1. Player Turn
-    turn("player")
-    
-    # 2. CPU Turn
-    turn("cpu")
+try:
+    while running:
 
-    # 3. Upkeep / Regeneration Phase
-    apply_end_of_turn_status()
-    
-    if state["rules"]["regen"]:
-        state["player_hp"] += state["regen_value"]
-        state["cpu_hp"] += state["regen_value"]
-        print(f"⏳ Regeneration (+{state['regen_value']} HP)")
+        # 🔥 check for update signal
+        if update_requested:
+            print("🔄 Update detected — closing game...")
+            break
 
-    maybe_explode_bomb()
+        # ===== YOUR EXISTING GAME CODE HERE =====
+        print("\n" + "="*30)
+        print(f"TURN {state['turn']}")
+        print(f"Player HP: {state['player_hp']} | CPU HP: {state['cpu_hp']}")
+        print(f"Base Dmg: {state['base_damage']} | Shield P/C: {state['player_defense']}/{state['cpu_defense']}")
+        print("="*30)
 
-    # 4. Mutation Phase
-    if state["turn"] % 2 == 0:
-        print("\n⚡ MUTATION PHASE ⚡")
+        # 1. Player Turn
+        turn("player")
+        
+        # 2. CPU Turn
+        turn("cpu")
 
-        first, second = ("player", "cpu") if mutation_turn_toggle else ("cpu", "player")
-        mutation_turn_toggle = not mutation_turn_toggle
+        # 3. Upkeep / Regeneration Phase
+        apply_end_of_turn_status()
+        
+        if state["rules"]["regen"]:
+            state["player_hp"] += state["regen_value"]
+            state["cpu_hp"] += state["regen_value"]
+            print(f"⏳ Regeneration (+{state['regen_value']} HP)")
 
-        for active_actor in [first, second]:
-            if active_actor == "player":
-                rnd_options = get_weighted_mutations(5)
-                print(f"\n🎲 RNG Mutations: {rnd_options}")
-                if state["player_deck"]:
-                    print(f"🃏 Deck Mutations: {state['player_deck']}")
-                
-                valid_choices = rnd_options + state["player_deck"]
-                choice = input("> Choose a Mutation: ").strip()
-                
-                while choice not in valid_choices:
-                    print(f"❌ Invalid selection. Choose from the available options.")
-                    choice = input("> ").strip()
+        maybe_explode_bomb()
+
+        # 4. Mutation Phase
+        if state["turn"] % 2 == 0:
+            print("\n⚡ MUTATION PHASE ⚡")
+
+            first, second = ("player", "cpu") if mutation_turn_toggle else ("cpu", "player")
+            mutation_turn_toggle = not mutation_turn_toggle
+
+            for active_actor in [first, second]:
+                if active_actor == "player":
+                    rnd_options = get_weighted_mutations(5)
+                    print(f"\n🎲 RNG Mutations: {rnd_options}")
+                    if state["player_deck"]:
+                        print(f"🃏 Deck Mutations: {state['player_deck']}")
                     
-                # Consume deck card if played
-                if choice in state["player_deck"] and choice not in rnd_options:
-                    state["player_deck"].remove(choice)
+                    valid_choices = rnd_options + state["player_deck"]
+                    choice = input("> Choose a Mutation: ").strip()
                     
-            else:
-                choice = get_weighted_mutations(1)[0]
+                    while choice not in valid_choices:
+                        print(f"❌ Invalid selection. Choose from the available options.")
+                        choice = input("> ").strip()
+                        
+                    # Consume deck card if played
+                    if choice in state["player_deck"] and choice not in rnd_options:
+                        state["player_deck"].remove(choice)
+                        
+                else:
+                    choice = get_weighted_mutations(1)[0]
 
-            apply_mutation(choice, active_actor)
+                apply_mutation(choice, active_actor)
 
-    state["turn"] += 1
+        state["turn"] += 1
+
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("Game closing...")
+
+finally:
+    running = False
