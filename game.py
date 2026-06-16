@@ -358,6 +358,48 @@ def check_can_act(actor):
             return False
     return True
 
+def play_penalty_shootout(attacker, defender):
+    """Triggers an immediate high-stakes penalty shootout mini-game using Tkinter dialog inputs."""
+    game_log(f"\n⚽ {attacker.upper()} IS TAKING A PENALTY KICK!", "#e67e22")
+    
+    directions = ["left", "center", "right"]
+    
+    # 1. Striker Choice Selection Window
+    if attacker == "player":
+        strike = simpledialog.askstring("PENALTY KICK!", "Where do you shoot? (left/center/right):")
+        if strike: strike = strike.strip().lower()
+        while strike not in directions: 
+            strike = simpledialog.askstring("INVALID DIRECTION", "Choose left, center, or right:")
+            if strike: strike = strike.strip().lower()
+        gk_save = random.choice(directions)
+    else:
+        strike = random.choice(directions)
+        game_log("🤖 CPU is preparing to shoot...")
+        gk_save = simpledialog.askstring("PENALTY SAVE!", "Which way do you dive to save? (left/center/right):")
+        if gk_save: gk_save = gk_save.strip().lower()
+        while gk_save not in directions: 
+            gk_save = simpledialog.askstring("INVALID DIRECTION", "Choose left, center, or right:")
+            if gk_save: gk_save = gk_save.strip().lower()
+
+    game_log(f"👟 {attacker.upper()} shoots {strike.upper()}!", "#ffffff")
+    game_log(f"🧤 {defender.upper()} dives {gk_save.upper()}!", "#ffffff")
+    
+    # 2. Outcome Calculations & Vector Shifts
+    if strike == gk_save:
+        game_log(f"❌ GREAT SAVE! {defender.upper()} blocked the shot! Counter-attack dealing 10 damage to {attacker.upper()}!", "#e74c3c")
+        if attacker == "player": state["player_hp"] -= 10
+        else: state["cpu_hp"] -= 10
+        trigger_damage_cutscene(attacker, 10)
+    else:
+        goal_damage = max(35, state["base_damage"] * 6)
+        game_log(f"⚽ GOAL!!! {attacker.upper()} completely fooled the keeper and scores {goal_damage} damage!", "#2ecc71")
+        if defender == "player": state["player_hp"] -= goal_damage
+        else: state["cpu_hp"] -= goal_damage
+        trigger_damage_cutscene(defender, goal_damage)
+        
+    update_status_displays()
+    check_game_over()
+
 # =========================
 # COMBAT FLIGHT CONTROL ENGINE
 # =========================
@@ -579,6 +621,16 @@ def apply_mutation(mutation, who):
     elif mutation == "DEFUSE_EFFECTS":
         for k in state["rules"]:
             if "infuse" in k: state["rules"][k] = False
+    # ⚽ FOOTBALL SEASON LTM CARD EXECUTIONS
+    elif mutation == "PENALTY_SHOOTOUT_LTM":
+        # Fires the dialog game loop immediately when chosen/pulled
+        play_penalty_shootout(who, "cpu" if who == "player" else "player")
+        
+    elif mutation == "RED_CARD_LTM":
+        target = "cpu" if who == "player" else "player"
+        # Accesses your status engine to bench (stun) the target for 2 rounds
+        state["statuses"][target]["sleep"] = 2
+        game_log(f"🟥 RED CARD! {target.upper()} committed a flagrant foul and is SENT OFF for 2 turns!", "#ff3333")
             
     update_status_displays()
     check_game_over()
