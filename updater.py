@@ -3,38 +3,108 @@ import sys
 import json
 import time
 import shutil
-import subprocess
 from pathlib import Path
-
 import requests
 
 # =========================
 # CONFIG
 # =========================
-GITHUB_USER = "YOUR_USERNAME"
-GITHUB_REPO = "YOUR_REPO"
+GITHUB_USER = "sam486767"
+GITHUB_REPO = "the-Jame"
 GITHUB_BRANCH = "main"
 
-BASE_URL = (
-    f"https://raw.githubusercontent.com/"
-    f"{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}"
-)
-
+BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}"
 VERSION_URL = f"{BASE_URL}/version.json"
 
 FILES = {
     "game.py": f"{BASE_URL}/game.py",
-    "updater.py": f"{BASE_URL}/updater.py",
     "version.json": f"{BASE_URL}/version.json",
 }
 
 VERSION_FILE = Path("version.json")
 TEMP_DIR = Path("temp_update")
 
+
 # =========================
-# HELPERS
+# STATE
+# =========================
+shutdown_callback = None
+update_ready = False
+
+
+# =========================
+# CORE FUNCTIONS
 # =========================
 def load_local_versions():
+    if not VERSION_FILE.exists():
+        return {"game_version": "0.0.0"}
+
+    with open(VERSION_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def get_remote_versions():
+    r = requests.get(VERSION_URL)
+    r.raise_for_status()
+    return r.json()
+
+
+def download_file(url, destination):
+    r = requests.get(url)
+    r.raise_for_status()
+
+    with open(destination, "wb") as f:
+        f.write(r.content)
+
+
+def download_update():
+    TEMP_DIR.mkdir(exist_ok=True)
+
+    for name, url in FILES.items():
+        print(f"[Updater] downloading {name}")
+        download_file(url, TEMP_DIR / name)
+
+
+def apply_update():
+    print("[Updater] applying update...")
+
+    shutil.copy2(TEMP_DIR / "game.py", "game.py")
+    shutil.copy2(TEMP_DIR / "version.json", "version.json")
+
+    shutil.rmtree(TEMP_DIR)
+
+
+# =========================
+# PUBLIC ENTRY
+# =========================
+def run_updater(on_update_detected):
+    global shutdown_callback
+    shutdown_callback = on_update_detected
+
+    print("[Updater] started")
+
+    while True:
+        try:
+            local = load_local_versions()
+            remote = get_remote_versions()
+
+            if local["game_version"] != remote["game_version"]:
+                print("[Updater] update found!")
+
+                # 🔥 signal game to stop
+                shutdown_callback()
+
+                download_update()
+                apply_update()
+
+                print("[Updater] update complete")
+
+                break
+
+        except Exception as e:
+            print("[Updater] error:", e)
+
+        time.sleep(300)  # 5 minutesdef load_local_versions():
     if not VERSION_FILE.exists():
         return {
             "game_version": "0.0.0",
