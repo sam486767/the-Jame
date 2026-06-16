@@ -1,3 +1,28 @@
+import threading
+import time
+import updater  # your updater module
+
+running = True
+
+def start_updater():
+    updater.run_updater(lambda: running)
+
+# start updater in background
+threading.Thread(target=start_updater, daemon=True).start()
+
+print("Game started")
+
+try:
+    while True:
+        # YOUR GAME LOOP HERE
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    print("Game closing...")
+    running = False
+
+
+
 import random
 import math
 import sys
