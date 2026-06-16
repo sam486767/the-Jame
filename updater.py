@@ -17,7 +17,6 @@ GITHUB_BRANCH = "main"
 BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}"
 VERSION_URL = f"{BASE_URL}/version.json"
 
-# Added updater.py here so that self-patching works without throwing FileNotFoundError
 FILES = {
     "game.py": f"{BASE_URL}/game.py",
     "updater.py": f"{BASE_URL}/updater.py",
@@ -60,13 +59,17 @@ def load_local_versions():
 
 
 def get_remote_versions():
-    r = requests.get(VERSION_URL)
+    # Cache Buster: Append a unique timestamp so GitHub cannot serve a cached file
+    cache_buster_url = f"{VERSION_URL}?t={int(time.time())}"
+    r = requests.get(cache_buster_url)
     r.raise_for_status()
     return r.json()
 
 
 def download_file(url, destination):
-    r = requests.get(url)
+    # Cache Buster applied to file downloads to guarantee the freshest code gets pulled
+    cache_buster_url = f"{url}?t={int(time.time())}"
+    r = requests.get(cache_buster_url)
     r.raise_for_status()
 
     with open(destination, "wb") as f:
@@ -148,19 +151,16 @@ def run_updater(on_update_detected):
             local = load_local_versions()
             remote = get_remote_versions()
 
-            game_update = local.get("game_version", "0.0.0") != remote.get("game_version", "0.0.0")
-            updater_update = local.get("updater_version", "0.0.0") != remote.get("updater_version", "0.0.0")
+            game_update = str(local.get("game_version", "0.0.0")).strip() != str(remote.get("game_version", "0.0.0")).strip()
+            updater_update = str(local.get("updater_version", "0.0.0")).strip() != str(remote.get("updater_version", "0.0.0")).strip()
 
             if game_update or updater_update:
                 print("[Updater] Update found in background thread!")
 
-                # Signal the game to shutdown its Tkinter loop safely
                 if shutdown_callback:
                     shutdown_callback()
                 
-                # Give the main game window thread a brief 2-second window to close gracefully
                 time.sleep(2)
-
                 download_updates()
 
                 if game_update:
@@ -178,7 +178,7 @@ def run_updater(on_update_detected):
         except Exception as e:
             print("[Updater] Background thread error:", e)
 
-        time.sleep(300)  # Check every 5 minutes
+        time.sleep(300)
 
 
 # =========================
@@ -191,8 +191,8 @@ def main():
         local = load_local_versions()
         remote = get_remote_versions()
 
-        game_update = local.get("game_version", "0.0.0") != remote.get("game_version", "0.0.0")
-        updater_update = local.get("updater_version", "0.0.0") != remote.get("updater_version", "0.0.0")
+        game_update = str(local.get("game_version", "0.0.0")).strip() != str(remote.get("game_version", "0.0.0")).strip()
+        updater_update = str(local.get("updater_version", "0.0.0")).strip() != str(remote.get("updater_version", "0.0.0")).strip()
 
         if game_update or updater_update:
             print("[Launcher] Update found!")
@@ -212,199 +212,6 @@ def main():
 
     except Exception as e:
         print("[Launcher] Updater error:", e)
-
-    cleanup()
-    launch_game()
-
-
-if __name__ == "__main__":
-    main()# =========================
-def load_local_versions():
-    if not VERSION_FILE.exists():
-        return {"game_version": "0.0.0"}
-
-    with open(VERSION_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def get_remote_versions():
-    r = requests.get(VERSION_URL)
-    r.raise_for_status()
-    return r.json()
-
-
-def download_file(url, destination):
-    r = requests.get(url)
-    r.raise_for_status()
-
-    with open(destination, "wb") as f:
-        f.write(r.content)
-
-
-def download_update():
-    TEMP_DIR.mkdir(exist_ok=True)
-
-    for name, url in FILES.items():
-        print(f"[Updater] downloading {name}")
-        download_file(url, TEMP_DIR / name)
-
-
-def apply_update():
-    print("[Updater] applying update...")
-
-    shutil.copy2(TEMP_DIR / "game.py", "game.py")
-    shutil.copy2(TEMP_DIR / "version.json", "version.json")
-
-    shutil.rmtree(TEMP_DIR)
-
-
-# =========================
-# PUBLIC ENTRY
-# =========================
-def run_updater(on_update_detected):
-    global shutdown_callback
-    shutdown_callback = on_update_detected
-
-    print("[Updater] started")
-
-    while True:
-        try:
-            local = load_local_versions()
-            remote = get_remote_versions()
-
-            if local["game_version"] != remote["game_version"]:
-                print("[Updater] update found!")
-
-                # 🔥 signal game to stop
-                shutdown_callback()
-
-                download_update()
-                apply_update()
-
-                print("[Updater] update complete")
-
-                break
-
-        except Exception as e:
-            print("[Updater] error:", e)
-
-        time.sleep(300)  # 5 minutesdef load_local_versions():
-    if not VERSION_FILE.exists():
-        return {
-            "game_version": "0.0.0",
-            "updater_version": "0.0.0"
-        }
-
-    with open(VERSION_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def get_remote_versions():
-    r = requests.get(VERSION_URL)
-    r.raise_for_status()
-    return r.json()
-
-
-def download_file(url, destination):
-    r = requests.get(url)
-    r.raise_for_status()
-
-    with open(destination, "wb") as f:
-        f.write(r.content)
-
-
-def download_updates():
-    TEMP_DIR.mkdir(exist_ok=True)
-
-    for filename, url in FILES.items():
-        print(f"Downloading {filename}...")
-        download_file(url, TEMP_DIR / filename)
-
-
-def replace_game_files():
-    print("Updating game files...")
-
-    shutil.copy2(TEMP_DIR / "game.py", "game.py")
-    shutil.copy2(TEMP_DIR / "version.json", "version.json")
-
-
-def launch_game():
-    print("Launching game...")
-    subprocess.Popen([sys.executable, "game.py"])
-
-
-def cleanup():
-    if TEMP_DIR.exists():
-        shutil.rmtree(TEMP_DIR)
-
-
-# =========================
-# PATCHER
-# =========================
-def create_patcher():
-    patcher_code = r'''
-import time
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
-time.sleep(2)
-
-temp = Path("temp_update")
-if temp.exists():
-    shutil.copy2(temp / "updater.py", "updater.py")
-    shutil.copy2(temp / "version.json", "version.json")
-
-    shutil.rmtree(temp)
-
-subprocess.Popen([sys.executable, "updater.py"])
-'''
-
-    with open("patcher.py", "w", encoding="utf-8") as f:
-        f.write(patcher_code)
-
-
-def run_patcher():
-    subprocess.Popen([sys.executable, "patcher.py"])
-    sys.exit()
-
-
-# =========================
-# MAIN
-# =========================
-def main():
-    print("Checking for updates...")
-
-    try:
-        local = load_local_versions()
-        remote = get_remote_versions()
-
-        game_update = (
-            local["game_version"] != remote["game_version"]
-        )
-
-        updater_update = (
-            local["updater_version"] != remote["updater_version"]
-        )
-
-        if game_update or updater_update:
-            print("Update found!")
-            download_updates()
-
-            if game_update:
-                replace_game_files()
-
-            if updater_update:
-                print("Updater needs updating...")
-                create_patcher()
-                run_patcher()
-
-        else:
-            print("Already up to date.")
-
-    except Exception as e:
-        print("Updater error:", e)
 
     cleanup()
     launch_game()
