@@ -37,7 +37,7 @@ MUTATION_WEIGHTS = {
 }
 
 state = {
-    "player_hp": 100, "cpu_hp": 100, "base_damage": 5,
+    "player_hp": 150, "cpu_hp": 150, "base_damage": 10,
     "player_defense": 0, "cpu_defense": 0, "turn": 1, "player_deck": [],
     "statuses": {
         "player": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False},
