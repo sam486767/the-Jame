@@ -2,27 +2,15 @@ import threading
 import random
 import sys
 import time
+import json
+import os
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 import updater
 
-# Keep background updater intact
-running = True
-update_requested = False
-
-def request_game_shutdown():
-    global update_requested
-    update_requested = True
-
-def start_updater():
-    updater.run_updater(request_game_shutdown)
-
-threading.Thread(target=start_updater, daemon=True).start()
-
-# =========================
-# GAME STATE & WEIGHTS
-# =========================
-
+# =====================================================================
+# GLOBAL CONFIGURATIONS & GAME PARAMETERS
+# =====================================================================
 MUTATION_WEIGHTS = {
     "ENABLE_GUNS": 10, "DISABLE_GUNS": 10, "DOUBLE_DAMAGE": 8, "HALF_DAMAGE": 8,
     "ENABLE_TRIVIA": 10, "ADD_REGEN": 10, "SUDDEN_DEATH": 2,
@@ -37,25 +25,15 @@ MUTATION_WEIGHTS = {
     "PENALTY_SHOOTOUT_LTM": 3, "RED_CARD_LTM": 2
 }
 
-state = {
-    "player_hp": 150, "cpu_hp": 150, "base_damage": 10,
-    "player_defense": 0, "cpu_defense": 0, "turn": 1, "player_deck": [],
-    "statuses": {
-        "player": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False},
-        "cpu": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False}
-    },
-    "rules": {
-        "guns_enabled": False, "trivia": False, "double_damage": False, "regen": False,
-        "sudden_death": False, "reverse_damage": False, "random_damage_spike": False,
-        "crit_boost": False, "low_hp_win": False, "high_hp_win": False, "rps_mode": False,
-        "infuse_poison": False, "infuse_burn": False, "infuse_sleep": False,
-        "infuse_paralyze": False, "infuse_freeze": False, "infuse_acid": False, "fifty_fifty": False
-    },
-    "regen_value": 0
-}
+# Exclusive Season 1 Battle Pass Tier Unlocks
+SEASON_PASS_REWARDS = [
+    {"tier": 1, "xp_required": 100, "id": "OVERCHARGE_LTM", "desc": "Instantly shifts Base Damage significantly."},
+    {"tier": 2, "xp_required": 250, "id": "NANITE_SHIELD_LTM", "desc": "Generates persistent mechanical defenses."},
+    {"tier": 3, "xp_required": 500, "id": "VAMPIRE_FANG_LTM", "desc": "Drains HP from your opponent directly."},
+    {"tier": 4, "xp_required": 800, "id": "ECLIPSE_LTM", "desc": "Blinds central UI processing systems."},
+    {"tier": 5, "xp_required": 1200, "id": "SINGULARITY_LTM", "desc": "Detonates immediate catastrophic state shifts."}
+]
 
-bomb_timer = None
-mutation_turn_toggle = True
 TRIVIA = [
     {"q": "What is 2 + 2?", "a": "4"},
     {"q": "What is the capital of France?", "a": "paris"},
@@ -64,734 +42,975 @@ TRIVIA = [
     {"q": "What colour is the sky on a clear day?", "a": "blue"}
 ]
 
-# Shared layouts globally monitored by control scopes
-player_panel = None
-cpu_panel = None
-p_hp_lbl = None
-c_hp_lbl = None
-turn_lbl = None
-global_rules_lbl = None
-rules_lbl = None
-log_box = None
-action_area = None
+# =====================================================================
+# CENTRALISED SYSTEM APPLICATION ENGINE
+# =====================================================================
+class MutationArenaApp:
+    def __init__(self, root_window):
+        self.root = root_window
+        self.root.title("MUTATION ARENA: CARD EDITION")
+        self.root.geometry("950x750")
+        self.root.configure(bg="#121212")
 
-# =========================
-# CORE UTILITY METHODS
-# =========================
+        # Threat Thread Signal Handling
+        self.update_requested = False
+        self.running = True
+        
+        # Operational In-Game Values
+        self.bomb_timer = None
+        self.mutation_turn_toggle = True
+        self.processing_turn = False
+        self.game_active = True  # Track if a match phase is valid
+        
+        # State Matrix Mapping Initialization
+        self.state = {}
+        self.clear_rules_dict()
 
-def get_weighted_mutations(k):
-    population = list(MUTATION_WEIGHTS.keys())
-    weights = list(MUTATION_WEIGHTS.values())
-    chosen = []
-    for _ in range(min(k, len(population))):
-        c = random.choices(population, weights=weights, k=1)[0]
-        idx = population.index(c)
-        chosen.append(c)
-        population.pop(idx)
-        weights.pop(idx)
-    return chosen
+        self.state.update({
+            "player_hp": 150, "cpu_hp": 150, "base_damage": 10,
+            "player_defense": 0, "cpu_defense": 0, "turn": 1, "player_deck": [],
+            "statuses": {
+                "player": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False},
+                "cpu": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False}
+            },
+            "regen_value": 0
+        })
+        
+        # UI Elements Cache
+        self.player_panel = None
+        self.cpu_panel = None
+        self.p_hp_lbl = None
+        self.c_hp_lbl = None
+        self.turn_lbl = None
+        self.global_rules_lbl = None
+        self.rules_lbl = None
+        self.log_box = None
+        self.action_area = None
+        self.draft_frame = None
+        self.pass_frame = None
+        self.counter_lbl = None
 
-# =========================
-# TKINTER ENGINE LAYOUT
-# =========================
+        # Execute Profile Data Layer
+        self.xp_file = "xp.json"
+        self.player_xp = 0
+        self.load_xp_profile()
 
-root = tk.Tk()
-root.title("MUTATION ARENA: CARD EDITION")
-root.geometry("900x700")
-root.configure(bg="#121212")
+        # Spin up Asynchronous Threading Channels
+        threading.Thread(target=self.start_updater, daemon=True).start()
+        self.check_updater_signals()
 
-# Check for updater thread requests
-def check_updater_signals():
-    if update_requested:
-        root.destroy()
-        sys.exit()
-    root.after(500, check_updater_signals)
+    def clear_rules_dict(self):
+        """Helper to safely build out a fresh, unmutated baseline configuration rules mapping."""
+        self.state["rules"] = {
+            "guns_enabled": False, "trivia": False, "double_damage": False, "regen": False,
+            "sudden_death": False, "reverse_damage": False, "random_damage_spike": False,
+            "crit_boost": False, "low_hp_win": False, "high_hp_win": False, "rps_mode": False,
+            "infuse_poison": False, "infuse_burn": False, "infuse_sleep": False,
+            "infuse_paralyze": False, "infuse_freeze": False, "infuse_acid": False, "fifty_fifty": False,
+            "overcharge": False, "nanite_shield": False, "vampire_fang": False, "eclipse": False, "singularity": False
+        }
 
-# Text Log Display Controller with NoneType Safety
-def game_log(message, color="#ffffff"):
-    print(message)  # Fallback to standard terminal out
-    if log_box is not None:
+    def reset_game_state(self):
+        """Purges active combat modifications and reloads profile state for a fresh run."""
+        self.load_xp_profile()
+    
+        self.bomb_timer = None
+        self.mutation_turn_toggle = True
+        self.processing_turn = False
+        self.game_active = True
+    
+        self.state = {
+            "player_hp": 150, "cpu_hp": 150, "base_damage": 10,
+            "player_defense": 0, "cpu_defense": 0, "turn": 1, "player_deck": [],
+            "statuses": {
+                "player": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False},
+                "cpu": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False}
+            },
+            "regen_value": 0
+        }
+        self.clear_rules_dict()
+
+    # =====================================================================
+    # XP PERMANENT RETRIEVAL & SAVE UTILITIES
+    # =====================================================================
+    def load_xp_profile(self):
+        if os.path.exists(self.xp_file):
+            try:
+                with open(self.xp_file, 'r') as f:
+                    data = json.load(f)
+                    self.player_xp = data.get("S1_xp", 0)
+            except Exception as e:
+                print(f"[Engine] File error parsing JSON matrix: {e}. Resetting values.")
+                self.player_xp = 0
+        else:
+            self.player_xp = 0  
+            self.save_xp_profile()
+
+    def save_xp_profile(self):
         try:
-            log_box.configure(state='normal')
-            tag_name = "color_" + str(time.time()).replace(".", "_")
-            log_box.tag_config(tag_name, foreground=color)
-            log_box.insert(tk.END, message + "\n", tag_name)
-            log_box.see(tk.END)
-            log_box.configure(state='disabled')
+            with open(self.xp_file, 'w') as f:
+                json.dump({"S1_xp": self.player_xp}, f, indent=4)
+        except Exception as e:
+            print(f"[Fatal Storage Error] Could not parse save data stream: {e}")
+
+    def add_match_xp(self, base_reward=120):
+        self.player_xp += base_reward
+        self.save_xp_profile()
+        self.game_log(f"⭐ Data streams synchronized! Acquired +{base_reward} S1_XP (Current Profile Total: {self.player_xp})", "#ffcc00")
+
+    def is_reward_unlocked(self, reward_id):
+        for item in SEASON_PASS_REWARDS:
+            if item["id"] == reward_id:
+                return self.player_xp >= item["xp_required"]
+        return True
+
+    # =====================================================================
+    # SYSTEM CONTROL MANAGEMENT
+    # =====================================================================
+    def request_game_shutdown(self):
+        self.update_requested = True
+
+    def start_updater(self):
+        updater.run_updater(self.request_game_shutdown)
+
+    def check_updater_signals(self):
+        if self.update_requested:
+            self.shutdown_application()
+            return
+        self.root.after(500, self.check_updater_signals)
+
+    def shutdown_application(self):
+        self.game_active = False
+        self.root.quit()
+        try:
+            self.root.destroy()
         except Exception:
             pass
+        sys.exit(0)
 
-# Synchronize backend state numbers to GUI visuals
-def update_status_displays():
-    if p_hp_lbl and c_hp_lbl and turn_lbl and global_rules_lbl and rules_lbl:
-        p_hp_lbl.config(text=f"HP: {state['player_hp']}")
-        c_hp_lbl.config(text=f"HP: {state['cpu_hp']}")
-        turn_lbl.config(text=f"ROUND {state['turn']}")
-        
-        stats_text = f"Base Attack Value: {state['base_damage']}  |  Shield Capacity (P/C): {state['player_defense']}/{state['cpu_defense']}"
-        if bomb_timer is not None:
-            stats_text += f"  |  💣 BOMB COUNTDOWN: {bomb_timer}"
-        global_rules_lbl.config(text=stats_text)
-        
-        # Render active rules text
-        active_rules = [k for k, v in state["rules"].items() if v]
-        rules_lbl.config(text="Global Mutations: " + (", ".join(active_rules) if active_rules else "None"))
+    # =====================================================================
+    # GRAPHICAL INTERFACE AND UTILITY CONTROLLERS
+    # =====================================================================
+    def game_log(self, message, color="#ffffff"):
+        print(message)
+        if self.log_box is not None and self.log_box.winfo_exists():
+            try:
+                self.log_box.configure(state='normal')
+                tag_name = "color_" + str(time.time()).replace(".", "_")
+                self.log_box.tag_config(tag_name, foreground=color)
+                self.log_box.insert(tk.END, message + "\n", tag_name)
+                self.log_box.see(tk.END)
+                self.log_box.configure(state='disabled')
+            except Exception:
+                pass
 
-# =========================
-# VISUAL CUTSCENES & ANIMATIONS
-# =========================
-
-def trigger_damage_cutscene(target, damage_dealt):
-    """Executes a graphic sequence including red screens, screen shaking, and rising impact text."""
-    target_frame = player_panel if target == "player" else cpu_panel
-    if not target_frame:
-        return
-        
-    original_bg = target_frame.cget("bg")
-    
-    # Cutscene Component A: Flashing Crimson Threat
-    def flash(count):
-        if count <= 0:
-            target_frame.config(bg=original_bg)
+    def update_status_displays(self):
+        # Safety guard to prevent configuring elements that were destroyed
+        if not self.p_hp_lbl or not self.p_hp_lbl.winfo_exists():
             return
-        current_color = "#b21c1c" if count % 2 == 0 else original_bg
-        target_frame.config(bg=current_color)
-        root.after(60, lambda: flash(count - 1))
+            
+        if self.p_hp_lbl and self.c_hp_lbl and self.turn_lbl and self.global_rules_lbl and self.rules_lbl:
+            self.p_hp_lbl.config(text=f"HP: {self.state['player_hp']}")
+            self.c_hp_lbl.config(text=f"HP: {self.state['cpu_hp']}")
+            self.turn_lbl.config(text=f"ROUND {self.state['turn']}")
+            
+            stats_text = f"Base Attack Value: {self.state['base_damage']}  |  Shield Capacity (P/C): {self.state['player_defense']}/{self.state['cpu_defense']}"
+            if self.bomb_timer is not None:
+                stats_text += f"  |  💣 BOMB COUNTDOWN: {self.bomb_timer}"
+            self.global_rules_lbl.config(text=stats_text)
+            
+            active_rules = [k for k, v in self.state["rules"].items() if v]
+            self.rules_lbl.config(text="Global Mutations: " + (", ".join(active_rules) if active_rules else "None"))
 
-    # Cutscene Component B: Positional Screen Shake
-    def shake(step, current_x=0):
-        if step <= 0:
-            target_frame.pack_configure(padx=20)
+    def get_weighted_mutations(self, k):
+        population = list(MUTATION_WEIGHTS.keys())
+        
+        for r in SEASON_PASS_REWARDS:
+            if self.is_reward_unlocked(r["id"]):
+                population.append(r["id"])
+
+        weights = [MUTATION_WEIGHTS.get(mut, 5) for mut in population]
+        chosen = []
+        for _ in range(min(k, len(population))):
+            c = random.choices(population, weights=weights, k=1)[0]
+            idx = population.index(c)
+            chosen.append(c)
+            population.pop(idx)
+            weights.pop(idx)
+        return chosen
+
+    # =====================================================================
+    # VISUAL ANIMATIONS
+    # =====================================================================
+    def trigger_damage_cutscene(self, target, damage_dealt):
+        if not self.game_active: return
+        target_frame = self.player_panel if target == "player" else self.cpu_panel
+        if not target_frame or not target_frame.winfo_exists():
             return
-        offset = random.choice([-12, 12])
-        target_frame.pack_configure(padx=20 + offset)
-        root.after(40, lambda: shake(step - 1, offset))
-
-    # Cutscene Component C: Floating Combat Text Burst
-    popup = tk.Label(target_frame, text=f"-{damage_dealt} HP!", font=("Courier", 24, "bold"), bg="#121212", fg="#ff3333")
-    popup.place(relx=0.5, rely=0.3, anchor="center")
-    
-    def float_up(ticks, current_y=0.3):
-        if ticks <= 0:
-            popup.destroy()
-            return
-        popup.place(relx=0.5, rely=current_y - 0.02, anchor="center")
-        root.after(50, lambda: float_up(ticks - 1, current_y - 0.02))
-
-    flash(5)
-    shake(8)
-    float_up(12)
-
-# =========================
-# GRAPHICAL CARD UTILITIES
-# =========================
-
-def clear_action_space():
-    if action_area:
-        for widget in action_area.winfo_children():
-            widget.destroy()
-
-def get_card_design(mutation_key):
-    """
-    Parses a mutation key to strip '_LTM' tags and returns a tuple of layout designs:
-    (display_name, bg_color, border_color, text_color, hover_bg)
-    """
-    display_name = mutation_key
-    is_ltm = False
-    
-    # 1. Handle LTM Tag Extraction
-    if mutation_key.endswith("_LTM"):
-        display_name = mutation_key[:-4]  # Remove "_LTM"
-        is_ltm = True
+        original_bg = target_frame.cget("bg")
         
-    # Format text for UI layout presentation (replace underscores with clean spaces)
-    display_name = display_name.replace("_", " ")
-    
-    # 2. Assign Border Styles and Rarity/Class Colors
-    if is_ltm:
-        # 👾 LIMITED TIME MODE CLASS (Vibrant Neon Purple/Magenta Theme)
-        return display_name, "#2c1a3a", "#e056fd", "#e056fd", "#431f5c"
-    
-    # Keyword classification filters
-    offensive_keywords = ["DAMAGE", "GUNS", "CRIT", "STRIKE", "INFUSE"]
-    vitality_keywords = ["HP", "REGEN", "EQUALISE", "SHIELDS", "STEAL"]
-    chaos_keywords = ["BOMB", "50_50", "RPS", "SWAP", "REVERSE"]
-    
-    if any(kw in mutation_key for kw in offensive_keywords):
-        # 🔥 OFFENSIVE CLASS (Crimson / Red Theme)
-        return display_name, "#2d1414", "#ff4757", "#ff4757", "#4a1c1c"
+        def flash(count):
+            if not self.game_active or not target_frame.winfo_exists(): return
+            if count <= 0:
+                target_frame.config(bg=original_bg)
+                return
+            current_color = "#b21c1c" if count % 2 == 0 else original_bg
+            target_frame.config(bg=current_color)
+            self.root.after(60, lambda: flash(count - 1))
+
+        def shake(step, current_x=0):
+            if not self.game_active or not target_frame.winfo_exists(): return
+            if step <= 0:
+                target_frame.pack_configure(padx=20)
+                return
+            offset = random.choice([-12, 12])
+            target_frame.pack_configure(padx=20 + offset)
+            self.root.after(40, lambda: shake(step - 1, offset))
+
+        popup = tk.Label(target_frame, text=f"-{damage_dealt} HP!", font=("Courier", 24, "bold"), bg="#121212", fg="#ff3333")
+        popup.place(relx=0.5, rely=0.3, anchor="center")
         
-    elif any(kw in mutation_key for kw in vitality_keywords):
-        # 🛡️ VITALITY & DEFENSE CLASS (Emerald / Green Theme)
-        return display_name, "#112415", "#2ed573", "#2ed573", "#1b3d22"
+        def float_up(ticks, current_y=0.3):
+            if not self.game_active or not popup.winfo_exists(): return
+            if ticks <= 0:
+                popup.destroy()
+                return
+            popup.place(relx=0.5, rely=current_y - 0.02, anchor="center")
+            self.root.after(50, lambda: float_up(ticks - 1, current_y - 0.02))
+
+        flash(5)
+        shake(8)
+        float_up(12)
+
+    def clear_action_space(self):
+        if self.action_area and self.action_area.winfo_exists():
+            for widget in self.action_area.winfo_children():
+                if widget.winfo_exists():
+                    widget.destroy()
+
+    # =====================================================================
+    # CARD DESIGN STYLE PARSING REGIME
+    # =====================================================================
+    def get_card_design(self, mutation_key):
+        display_name = mutation_key
+        is_ltm = False
         
-    elif any(kw in mutation_key for kw in chaos_keywords):
-        # 🎲 CHAOS & RISK CLASS (Cyber Gold / Amber Theme)
-        return display_name, "#26210f", "#ffa502", "#ffa502", "#403714"
+        if mutation_key.endswith("_LTM"):
+            display_name = mutation_key[:-4]
+            is_ltm = True
+            
+        display_name = display_name.replace("_", " ")
         
-    # ⚙️ STANDARD UTILITY CLASS (Sleek Slate Blue Theme)
-    return display_name, "#1e222b", "#70a1ff", "#70a1ff", "#2f3640"
+        is_pass_exclusive = any(r["id"] == mutation_key for r in SEASON_PASS_REWARDS)
+        if is_pass_exclusive:
+            if not self.is_reward_unlocked(mutation_key):
+                return f"🔒 [LOCKED TIER]\n{display_name}", "#242424", "#555555", "#888888", "#242424"
+            else:
+                return f"🌟 {display_name}", "#1b262c", "#00d2d3", "#00d2d3", "#223a47"
 
-
-def create_graphic_card(parent, title, command_callback):
-    """Generates a custom graphic trading-card frame using explicit rarity classes and borders."""
-    # Pull dynamic style configurations from the styling engine
-    display_name, bg_color, border_color, text_color, hover_bg = get_card_design(title)
-    
-    # Core card structural boundary layout frame
-    card = tk.Frame(parent, bg=bg_color, highlightbackground=border_color, highlightthickness=2, width=160, height=200)
-    card.pack_propagate(False)
-    
-    # Internal centered text decoration
-    lbl = tk.Label(card, text=display_name, font=("Courier", 11, "bold"), fg=text_color, bg=bg_color, wraplength=140)
-    lbl.pack(expand=True, fill="both", padx=10, pady=10)
-    
-    # Click-binding integration (Passes original backend 'title' string, NOT the filtered UI text)
-    def trigger_click(e): command_callback(title)
-    card.bind("<Button-1>", trigger_click)
-    lbl.bind("<Button-1>", trigger_click)
-    
-    # Hover animations tracking card category colors
-    card.bind("<Enter>", lambda e: card.config(bg=hover_bg))
-    card.bind("<Leave>", lambda e: card.config(bg=bg_color))
-    lbl.bind("<Enter>", lambda e: [card.config(bg=hover_bg), lbl.config(bg=hover_bg)])
-    lbl.bind("<Leave>", lambda e: [card.config(bg=bg_color), lbl.config(bg=bg_color)])
-    
-    return card
-
-# =========================
-# SYSTEM RULES PROCEDURES
-# =========================
-
-def check_game_over():
-    p_dead = state["player_hp"] <= 0
-    c_dead = state["cpu_hp"] <= 0
-
-    if p_dead or c_dead:
-        update_status_displays()
-        title = "⚡ ARENA TERMINATION ⚡"
-        msg = f"Final Standings:\nPlayer HP: {state['player_hp']} | CPU HP: {state['cpu_hp']}\n\n"
+        if is_ltm:
+            return display_name, "#2c1a3a", "#e056fd", "#e056fd", "#431f5c"
         
-        if state["rules"]["low_hp_win"]:
-            msg += "Condition 'LOW HP WIN' active!\n"
-            if state["player_hp"] < state["cpu_hp"]: msg += "PLAYER WINS!"
-            elif state["cpu_hp"] < state["player_hp"]: msg += "CPU WINS!"
-            else: msg += "DRAW!"
-        elif state["rules"]["high_hp_win"]:
-            msg += "Condition 'HIGH HP WIN' active!\n"
-            if state["player_hp"] > state["cpu_hp"]: msg += "PLAYER WINS!"
-            elif state["cpu_hp"] > state["player_hp"]: msg += "CPU WINS!"
-            else: msg += "DRAW!"
-        elif p_dead and c_dead: msg += "MUTUAL DESTRUCTION - DRAW!"
-        elif p_dead: msg += "CPU WINS!"
-        else: msg += "PLAYER WINS!"
+        offensive_keywords = ["DAMAGE", "GUNS", "CRIT", "STRIKE", "INFUSE"]
+        vitality_keywords = ["HP", "REGEN", "EQUALISE", "SHIELDS", "STEAL"]
+        chaos_keywords = ["BOMB", "50_50", "RPS", "SWAP", "REVERSE"]
         
-        messagebox.showinfo(title, msg)
-        root.destroy()
-        sys.exit()
+        if any(kw in mutation_key for kw in offensive_keywords):
+            return display_name, "#2d1414", "#ff4757", "#ff4757", "#4a1c1c"
+        elif any(kw in mutation_key for kw in vitality_keywords):
+            return display_name, "#112415", "#2ed573", "#2ed573", "#1b3d22"
+        elif any(kw in mutation_key for kw in chaos_keywords):
+            return display_name, "#26210f", "#ffa502", "#ffa502", "#403714"
+            
+        return display_name, "#1e222b", "#70a1ff", "#70a1ff", "#2f3640"
 
-def try_trivia(attacker, complete_callback):
-    if not state["rules"]["trivia"] or random.random() > 0.25:
-        complete_callback("pass")
-        return
+    def create_graphic_card(self, parent, title, command_callback):
+        display_name, bg_color, border_color, text_color, hover_bg = self.get_card_design(title)
+        
+        card = tk.Frame(parent, bg=bg_color, highlightbackground=border_color, highlightthickness=2, width=160, height=200)
+        card.pack_propagate(False)
+        
+        lbl = tk.Label(card, text=display_name, font=("Courier", 10, "bold"), fg=text_color, bg=bg_color, wraplength=140)
+        lbl.pack(expand=True, fill="both", padx=10, pady=10)
+        
+        is_locked = "🔒" in display_name
 
-    q = random.choice(TRIVIA)
-    game_log(f"❓ TRIVIA OVERRIDE ISSUED FOR {attacker.upper()}!", "#4fc3f7")
-    
-    if attacker == "cpu":
-        ans = q["a"] if random.random() > 0.5 else "wrong_answer"
-        game_log(f"CPU selected: {ans}")
-        if ans == q["a"]:
-            game_log("✔ CPU Answer Correct!", "#81c784")
-            complete_callback("correct")
-        else:
-            game_log("✖ CPU Answer Incorrect!", "#e57373")
-            complete_callback("wrong")
-    else:
-        # Prompt user through graphic popup instead of CLI stdin block
-        user_ans = simpledialog.askstring("TRIVIA TIME!", f"Question: {q['q']}")
-        user_ans = user_ans.strip().lower() if user_ans else ""
-        if user_ans == q["a"]:
-            game_log("✔ Player Answer Correct!", "#81c784")
-            complete_callback("correct")
-        else:
-            game_log("✖ Player Answer Incorrect!", "#e57373")
-            complete_callback("wrong")
+        def trigger_click(e): 
+            if not is_locked:
+                command_callback(title)
+            else:
+                messagebox.showwarning("Access Vector Restricted", "This mutation card requires additional S1_XP profiles to clear lock permissions.")
+                
+        card.bind("<Button-1>", trigger_click)
+        lbl.bind("<Button-1>", trigger_click)
+        
+        if not is_locked:
+            card.bind("<Enter>", lambda e: card.config(bg=hover_bg))
+            card.bind("<Leave>", lambda e: card.config(bg=bg_color))
+            lbl.bind("<Enter>", lambda e: [card.config(bg=hover_bg), lbl.config(bg=hover_bg)])
+            lbl.bind("<Leave>", lambda e: [card.config(bg=bg_color), lbl.config(bg=bg_color)])
+        
+        return card
 
-def apply_status_roll(defender):
-    chance = 0.3
-    if state["rules"]["infuse_poison"] and random.random() < chance:
-        state["statuses"][defender]["poison"] += 3
-        game_log(f"🍄 {defender.upper()} was Poisoned for 3 turns!", "#a9dfbf")
-    if state["rules"]["infuse_burn"] and random.random() < chance:
-        state["statuses"][defender]["burn"] += 3
-        game_log(f"🔥 {defender.upper()} was Burned for 3 turns!", "#f5b041")
-    if state["rules"]["infuse_sleep"] and random.random() < chance:
-        state["statuses"][defender]["sleep"] = random.randint(1, 2)
-        game_log(f"💤 {defender.upper()} fell asleep!", "#aed6f1")
-    if state["rules"]["infuse_paralyze"] and random.random() < chance:
-        state["statuses"][defender]["paralyze"] = True
-        game_log(f"⚡ {defender.upper()} is Paralyzed!", "#f9e79f")
-    if state["rules"]["infuse_freeze"] and random.random() < chance:
-        state["statuses"][defender]["freeze"] = True
-        game_log(f"🧊 {defender.upper()} was Frozen solid!", "#5dedf5")
-    if state["rules"]["infuse_acid"] and random.random() < chance:
-        state["statuses"][defender]["poison"] += 1
-        game_log(f"🧪 {defender.upper()} hit with Acid! (+1 turn Poison)", "#58d68d")
+    # =====================================================================
+    # BOX CHECKS & REPLAY LOOPS
+    # =====================================================================
+    def check_game_over(self):
+        if not self.game_active: return True
+        
+        p_dead = self.state["player_hp"] <= 0
+        c_dead = self.state["cpu_hp"] <= 0
 
-def check_can_act(actor):
-    s = state["statuses"][actor]
-    if s["sleep"] > 0:
-        game_log(f"💤 {actor.upper()} is fast asleep...", "#5da2f5")
-        s["sleep"] -= 1
+        if p_dead or c_dead:
+            self.game_active = False  # Shut down background loops immediately
+            
+            # Safely log final update before wiping panels
+            if self.p_hp_lbl and self.p_hp_lbl.winfo_exists():
+                self.update_status_displays()
+                
+            title = "⚡ ARENA TERMINATION ⚡"
+            msg = f"Final Standings:\nPlayer HP: {self.state['player_hp']} | CPU HP: {self.state['cpu_hp']}\n\n"
+            
+            p_won = False
+            if self.state["rules"]["low_hp_win"]:
+                if self.state["player_hp"] < self.state["cpu_hp"]: p_won = True
+            elif self.state["rules"]["high_hp_win"]:
+                if self.state["player_hp"] > self.state["cpu_hp"]: p_won = True
+            elif c_dead and not p_dead:
+                p_won = True
+
+            if p_won:
+                msg += "PLAYER WINS! Synchronizing data vectors...\n\n"
+                self.add_match_xp(10)  
+            else:
+                msg += "MATCH CONCLUDED.\n\n"
+                self.add_match_xp(5)   
+                
+            msg += "Would you like to draft a new deck and play another match?"
+            replay = messagebox.askyesno(title, msg)
+            
+            if replay:
+                for widget in self.root.winfo_children():
+                    if widget.winfo_exists():
+                        widget.destroy()
+                
+                self.reset_game_state()
+                self.execute_deck_draft_gui()
+            else:
+                self.shutdown_application()
+            return True
         return False
-    if s["freeze"]:
-        if random.random() < 0.25:
-            game_log(f"🧊✨ {actor.upper()} thawed out!", "#5dedf5")
-            s["freeze"] = False
-        else:
-            game_log(f"🧊 {actor.upper()} is frozen solid!", "#5dedf5")
-            return False
-    if s["paralyze"]:
-        if random.random() < 0.25:
-            game_log(f"⚡ {actor.upper()} is fully paralyzed and skips action!", "#f9e79f")
-            return False
-    return True
 
-def play_penalty_shootout(attacker, defender):
-    """Triggers an immediate high-stakes penalty shootout mini-game using Tkinter dialog inputs."""
-    game_log(f"\n⚽ {attacker.upper()} IS TAKING A PENALTY KICK!", "#e67e22")
-    
-    directions = ["left", "center", "right"]
-    
-    # 1. Striker Choice Selection Window
-    if attacker == "player":
-        strike = simpledialog.askstring("PENALTY KICK!", "Where do you shoot? (left/center/right):")
-        if strike: strike = strike.strip().lower()
-        while strike not in directions: 
-            strike = simpledialog.askstring("INVALID DIRECTION", "Choose left, center, or right:")
+    def try_trivia(self, attacker, complete_callback):
+        if not self.game_active: return
+        if not self.state["rules"]["trivia"] or random.random() > 0.25:
+            complete_callback("pass")
+            return
+
+        q = random.choice(TRIVIA)
+        self.game_log(f"❓ TRIVIA OVERRIDE ISSUED FOR {attacker.upper()}!", "#4fc3f7")
+        
+        if attacker == "cpu":
+            ans = q["a"] if random.random() > 0.5 else "wrong_answer"
+            self.game_log(f"CPU selected: {ans}")
+            if ans == q["a"]:
+                self.game_log("✔ CPU Answer Correct!", "#81c784")
+                complete_callback("correct")
+            else:
+                self.game_log("✖ CPU Answer Incorrect!", "#e57373")
+                complete_callback("wrong")
+        else:
+            user_ans = simpledialog.askstring("TRIVIA TIME!", f"Question: {q['q']}")
+            user_ans = user_ans.strip().lower() if user_ans else ""
+            if user_ans == q["a"]:
+                self.game_log("✔ Player Answer Correct!", "#81c784")
+                complete_callback("correct")
+            else:
+                self.game_log("✖ Player Answer Incorrect!", "#e57373")
+                complete_callback("wrong")
+
+    def apply_status_roll(self, defender):
+        if not self.game_active: return
+        chance = 0.3
+        if self.state["rules"]["infuse_poison"] and random.random() < chance:
+            self.state["statuses"][defender]["poison"] += 3
+            self.game_log(f"🍄 {defender.upper()} was Poisoned for 3 turns!", "#a9dfbf")
+        if self.state["rules"]["infuse_burn"] and random.random() < chance:
+            self.state["statuses"][defender]["burn"] += 3
+            self.game_log(f"🔥 {defender.upper()} was Burned for 3 turns!", "#f5b041")
+        if self.state["rules"]["infuse_sleep"] and random.random() < chance:
+            self.state["statuses"][defender]["sleep"] = random.randint(1, 2)
+            self.game_log(f"💤 {defender.upper()} fell asleep!", "#aed6f1")
+        if self.state["rules"]["infuse_paralyze"] and random.random() < chance:
+            self.state["statuses"][defender]["paralyze"] = True
+            self.game_log(f"⚡ {defender.upper()} is Paralyzed!", "#f9e79f")
+        if self.state["rules"]["infuse_freeze"] and random.random() < chance:
+            self.state["statuses"][defender]["freeze"] = True
+            self.game_log(f"🧊 {defender.upper()} was Frozen solid!", "#5dedf5")
+        if self.state["rules"]["infuse_acid"] and random.random() < chance:
+            self.state["statuses"][defender]["poison"] += 1
+            self.game_log(f"🧪 {defender.upper()} hit with Acid! (+1 turn Poison)", "#58d68d")
+
+    def check_can_act(self, actor):
+        if not self.game_active: return False
+        s = self.state["statuses"][actor]
+        if s["sleep"] > 0:
+            self.game_log(f"💤 {actor.upper()} is fast asleep...", "#5da2f5")
+            s["sleep"] -= 1
+            return False
+        if s["freeze"]:
+            if random.random() < 0.25:
+                self.game_log(f"🧊✨ {actor.upper()} thawed out!", "#5dedf5")
+                s["freeze"] = False
+            else:
+                self.game_log(f"🧊 {actor.upper()} is frozen solid!", "#5dedf5")
+                return False
+        if s["paralyze"]:
+            if random.random() < 0.25:
+                self.game_log(f"⚡ {actor.upper()} is fully paralyzed and skips action!", "#f9e79f")
+                return False
+        return True
+
+    def play_penalty_shootout(self, attacker, defender):
+        if not self.game_active: return
+        self.game_log(f"\n⚽ {attacker.upper()} IS TAKING A PENALTY KICK!", "#e67e22")
+        directions = ["left", "center", "right"]
+        
+        if attacker == "player":
+            strike = simpledialog.askstring("PENALTY KICK!", "Where do you shoot? (left/center/right):")
             if strike: strike = strike.strip().lower()
-        gk_save = random.choice(directions)
-    else:
-        strike = random.choice(directions)
-        game_log("🤖 CPU is preparing to shoot...")
-        gk_save = simpledialog.askstring("PENALTY SAVE!", "Which way do you dive to save? (left/center/right):")
-        if gk_save: gk_save = gk_save.strip().lower()
-        while gk_save not in directions: 
-            gk_save = simpledialog.askstring("INVALID DIRECTION", "Choose left, center, or right:")
+            while strike not in directions: 
+                strike = simpledialog.askstring("INVALID DIRECTION", "Choose left, center, or right:")
+                if strike: strike = strike.strip().lower()
+            gk_save = random.choice(directions)
+        else:
+            strike = random.choice(directions)
+            self.game_log("🤖 CPU is preparing to shoot...")
+            gk_save = simpledialog.askstring("PENALTY SAVE!", "Which way do you dive to save? (left/center/right):")
             if gk_save: gk_save = gk_save.strip().lower()
+            while gk_save not in directions: 
+                gk_save = simpledialog.askstring("INVALID DIRECTION", "Choose left, center, or right:")
+                if gk_save: gk_save = gk_save.strip().lower()
 
-    game_log(f"👟 {attacker.upper()} shoots {strike.upper()}!", "#ffffff")
-    game_log(f"🧤 {defender.upper()} dives {gk_save.upper()}!", "#ffffff")
-    
-    # 2. Outcome Calculations & Vector Shifts
-    if strike == gk_save:
-        game_log(f"❌ GREAT SAVE! {defender.upper()} blocked the shot! Counter-attack dealing 10 damage to {attacker.upper()}!", "#e74c3c")
-        if attacker == "player": state["player_hp"] -= 10
-        else: state["cpu_hp"] -= 10
-        trigger_damage_cutscene(attacker, 10)
-    else:
-        goal_damage = max(35, state["base_damage"] * 6)
-        game_log(f"⚽ GOAL!!! {attacker.upper()} completely fooled the keeper and scores {goal_damage} damage!", "#2ecc71")
-        if defender == "player": state["player_hp"] -= goal_damage
-        else: state["cpu_hp"] -= goal_damage
-        trigger_damage_cutscene(defender, goal_damage)
+        self.game_log(f"👟 {attacker.upper()} shoots {strike.upper()}!", "#ffffff")
+        self.game_log(f"🧤 {defender.upper()} dives {gk_save.upper()}!", "#ffffff")
         
-    update_status_displays()
-    check_game_over()
-
-# =========================
-# COMBAT FLIGHT CONTROL ENGINE
-# =========================
-
-def execute_strike(attacker, defender, trivia_result):
-    if state["rules"]["fifty_fifty"]:
-        game_log("\n🎲 50/50 ACTIVE — PURGING ALL COIN FLIPS", "#e74c3c")
-        winner = random.choice(["player", "cpu"])
-        loser = "cpu" if winner == "player" else "player"
-        state[f"{loser}_hp"] = 0
-        game_log(f"🏆 {winner.upper()} INSANELY CLAIMS AUTOMATIC VICTORY", "#ffcc00")
-        check_game_over()
-        return
-
-    base = state["base_damage"]
-    damage = base
-
-    if state["statuses"][attacker]["burn"] > 0:
-        damage = max(1, damage // 2)
-    if state["rules"]["guns_enabled"]:
-        damage += 10
-        game_log("💥 Guns are blazing!", "#ff5722")
-    if state["rules"]["double_damage"]: damage *= 2
-    if state["rules"]["sudden_death"]: damage *= 3
-    if state["rules"]["random_damage_spike"]: damage *= random.randint(1, 4)
-    if state["rules"]["crit_boost"] and random.random() < 0.4:
-        game_log("✨ CRITICAL HIT EMITTED!", "#ffeb3b")
-        damage *= 2
-
-    if trivia_result == "correct":
-        damage *= 2
-        game_log("🔥 Trivia Multiplier Boost active!")
-    elif trivia_result == "wrong":
-        damage = max(1, damage // 2)
-        game_log("💀 Trivia Deficit penalty applied")
-
-    damage = int(damage)
-    defense = state["player_defense"] if defender == "player" else state["cpu_defense"]
-    
-    if state["rules"]["reverse_damage"]:
-        actual_change = -damage 
-        game_log(f"❤️ Reverse Damage active! {defender.upper()} absorbs fuel.", "#4caf50")
-    else:
-        actual_change = max(0, damage - defense)
-
-    if defender == "player": state["player_hp"] -= actual_change
-    else: state["cpu_hp"] -= actual_change
-
-    game_log(f"⚔️ {attacker.upper()} strikes! Shifts balance by {actual_change} to {defender.upper()}.", "#ff7675")
-    
-    trigger_damage_cutscene(defender, actual_change)
-    apply_status_roll(defender)
-    update_status_displays()
-    check_game_over()
-
-def run_cpu_turn():
-    if not check_can_act("cpu"):
-        run_upkeep_phase()
-        return
-
-    if state["rules"]["rps_mode"]:
-        opts = ["rock", "paper", "scissors"]
-        cpu_choice = random.choice(opts)
-        game_log("🤖 CPU is targeting your position! Defend in Rock Paper Scissors Mode.")
-        
-        clear_action_space()
-        for move in opts:
-            btn = tk.Button(action_area, text=move.upper(), bg="#4b2a4a", fg="white", font=("Courier", 12),
-                            command=lambda m=move: resolve_rps("cpu", "player", cpu_choice, m))
-            btn.pack(side="left", expand=True, padx=10, pady=10)
-    else:
-        try_trivia("cpu", lambda outcome: [execute_strike("cpu", "player", outcome), root.after(1000, run_upkeep_phase)])
-
-def run_player_turn():
-    clear_action_space()
-    update_status_displays()
-    
-    if not check_can_act("player"):
-        root.after(1000, run_cpu_turn)
-        return
-
-    if state["rules"]["rps_mode"]:
-        game_log("✂️ 📄 🪨 RPS SYSTEM TRIGGERED. CHOOSE ATTACK OBJECTIVE:")
-        opts = ["rock", "paper", "scissors"]
-        for move in opts:
-            btn = tk.Button(action_area, text=move.upper(), bg="#2a4d69", fg="white", font=("Courier", 12),
-                            command=lambda m=move: resolve_rps("player", "cpu", m, random.choice(opts)))
-            btn.pack(side="left", expand=True, padx=10, pady=10)
-    else:
-        atk_btn = tk.Button(action_area, text="LAUNCH STRIKE", font=("Courier", 14, "bold"), bg="#c0392b", fg="white",
-                            command=player_attack_clicked)
-        atk_btn.pack(fill="both", expand=True, padx=20, pady=20)
-
-def player_attack_clicked():
-    clear_action_space()
-    try_trivia("player", lambda outcome: [execute_strike("player", "cpu", outcome), root.after(1000, run_cpu_turn)])
-
-def resolve_rps(attacker, defender, choice, def_choice):
-    clear_action_space()
-    game_log(f"{attacker.upper()} deployed {choice.upper()}! {defender.upper()} countered with {def_choice.upper()}!")
-    win_conditions = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
-    
-    if choice == def_choice:
-        game_log("🤝 Mutual Parity! Stalemate reached - No impact sustained.", "#bdc3c7")
-    elif win_conditions[choice] == def_choice:
-        dmg = state["base_damage"] * 3
-        game_log(f"🎯 {attacker.upper()} DOMINATED MATCHUP! Deals {dmg} fatal damage!", "#2ecc71")
-        state[f"{defender}_hp"] -= dmg
-        trigger_damage_cutscene(defender, dmg)
-    else:
-        game_log(f"🛡️ {defender.upper()} DEFLECTED THE OUTCOME! Deflection protocols active.", "#e74c3c")
-        
-    update_status_displays()
-    check_game_over()
-    
-    if attacker == "player":
-        root.after(1000, run_cpu_turn)
-    else:
-        root.after(1000, run_upkeep_phase)
-
-# =========================
-# UPKEEP & MUTATION ENGINE MANAGEMENT
-# =========================
-
-def run_upkeep_phase():
-    global bomb_timer
-    game_log("\n⏳ Round Upkeep Processing...", "#95a5a6")
-    
-    for actor in ["player", "cpu"]:
-        s = state["statuses"][actor]
-        if s["poison"] > 0:
-            game_log(f"🍄 {actor.upper()} suffers 5 Poison breakdown damage.")
-            state[f"{actor}_hp"] -= 5
-            s["poison"] -= 1
-        if s["burn"] > 0:
-            game_log(f"🔥 {actor.upper()} suffers 3 Burn thermal damage.")
-            state[f"{actor}_hp"] -= 3
-            s["burn"] -= 1
-            
-    if state["rules"]["regen"]:
-        state["player_hp"] += state["regen_value"]
-        state["cpu_hp"] += state["regen_value"]
-        game_log(f"⏳ Nano-regeneration injected (+{state['regen_value']} HP global recovery)")
-
-    if bomb_timer is not None:
-        bomb_timer -= 1
-        game_log(f"💣 Bomb Fuse Warning: {bomb_timer} ticks until core meltdown!", "#e67e22")
-        if bomb_timer <= 0:
-            game_log("\n💣💥 THE INTEGRATED MATRIX BOMB HAS EXPLODED. COMBAT EQUALIZED IN A DRAW.", "#ff0000")
-            messagebox.showinfo("MATRIX DESTROYED", "The ticking payload detonated! Game Result: DRAW.")
-            root.destroy()
-            sys.exit()
-
-    update_status_displays()
-    check_game_over()
-
-    if state["turn"] % 2 == 0:
-        run_mutation_phase()
-    else:
-        state["turn"] += 1
-        run_player_turn()
-
-def apply_mutation(mutation, who):
-    global bomb_timer
-    game_log(f"⚡ {who.upper()} INJECTS OVERRIDE: {mutation}", "#ffcc00")
-
-    if mutation == "ENABLE_TRIVIA": state["rules"]["trivia"] = True
-    elif mutation == "ENABLE_GUNS": state["rules"]["guns_enabled"] = True
-    elif mutation == "DISABLE_GUNS": state["rules"]["guns_enabled"] = False
-    elif mutation == "DOUBLE_DAMAGE": state["rules"]["double_damage"] = True
-    elif mutation == "HALF_DAMAGE": state["base_damage"] = max(1, state["base_damage"] // 2)
-    elif mutation == "ADD_REGEN":
-        state["rules"]["regen"] = True
-        state["regen_value"] = 2
-    elif mutation == "SUDDEN_DEATH":
-        state["rules"]["sudden_death"] = True
-        state["player_hp"] = min(state["player_hp"], 30)
-        state["cpu_hp"] = min(state["cpu_hp"], 30)
-    elif mutation == "INCREASE_PLAYER_HP": state["player_hp"] += 20
-    elif mutation == "INCREASE_CPU_HP": state["cpu_hp"] += 20
-    elif mutation == "DECREASE_PLAYER_HP": state["player_hp"] -= 10
-    elif mutation == "DECREASE_CPU_HP": state["cpu_hp"] -= 10
-    elif mutation == "INCREASE_BASE_DAMAGE": state["base_damage"] += 2
-    elif mutation == "DECREASE_BASE_DAMAGE": state["base_damage"] = max(1, state["base_damage"] - 2)
-    elif mutation == "REVERSE_DAMAGE": state["rules"]["reverse_damage"] = True
-    elif mutation == "ENABLE_SHIELDS":
-        state["player_defense"] += 2
-        state["cpu_defense"] += 2
-    elif mutation == "CRIT_BOOST": state["rules"]["crit_boost"] = True
-    elif mutation == "CRIT_REDUCE": state["rules"]["crit_boost"] = False
-    elif mutation == "SWAP_HP": state["player_hp"], state["cpu_hp"] = state["cpu_hp"], state["player_hp"]
-    elif mutation == "STEAL_HP":
-        if who == "player":
-            state["player_hp"] += 10; state["cpu_hp"] -= 10
+        if strike == gk_save:
+            self.game_log(f"❌ GREAT SAVE! {defender.upper()} blocked the shot! Counter-attack dealing 10 damage to {attacker.upper()}!", "#e74c3c")
+            self.state[f"{attacker}_hp"] -= 10
+            if self.check_game_over(): return
+            self.trigger_damage_cutscene(attacker, 10)
         else:
-            state["cpu_hp"] += 10; state["player_hp"] -= 10
-    elif mutation == "HP_EQUALISE":
-        avg = (state["player_hp"] + state["cpu_hp"]) // 2
-        state["player_hp"] = state["cpu_hp"] = avg
-    elif mutation == "GLOBAL_DAMAGE_BOOST": state["base_damage"] += 3
-    elif mutation == "GLOBAL_DAMAGE_REDUCE": state["base_damage"] = max(1, state["base_damage"] - 3)
-    elif mutation == "RANDOM_DAMAGE_SPIKE": state["rules"]["random_damage_spike"] = True
-    elif mutation == "LOW_HP_WIN": state["rules"]["low_hp_win"] = True
-    elif mutation == "HIGH_HP_WIN": state["rules"]["high_hp_win"] = True
-    elif mutation == "ENABLE_RPS": state["rules"]["rps_mode"] = True
-    elif mutation == "BOMB_INSTALL":
-        bomb_timer = random.randint(6, 15)
-    elif mutation == "BOMB_ACCELERATE":
-        if bomb_timer is not None: bomb_timer = max(1, bomb_timer - 3)
-    elif mutation == "BOMB_SLOW":
-        if bomb_timer is not None: bomb_timer += 3
-    elif mutation == "INFUSE_POISON": state["rules"]["infuse_poison"] = True
-    elif mutation == "INFUSE_BURN": state["rules"]["infuse_burn"] = True
-    elif mutation == "INFUSE_SLEEP": state["rules"]["infuse_sleep"] = True
-    elif mutation == "INFUSE_PARALYZE": state["rules"]["infuse_paralyze"] = True
-    elif mutation == "INFUSE_FREEZE": state["rules"]["infuse_freeze"] = True
-    elif mutation == "INFUSE_ACID": state["rules"]["infuse_acid"] = True
-    elif mutation == "ENABLE_50_50": state["rules"]["fifty_fifty"] = True
-    elif mutation == "DEFUSE_EFFECTS":
-        for k in state["rules"]:
-            if "infuse" in k: state["rules"][k] = False
-    # ⚽ FOOTBALL SEASON LTM CARD EXECUTIONS
-    elif mutation == "PENALTY_SHOOTOUT_LTM":
-        # Fires the dialog game loop immediately when chosen/pulled
-        play_penalty_shootout(who, "cpu" if who == "player" else "player")
-        
-    elif mutation == "RED_CARD_LTM":
-        target = "cpu" if who == "player" else "player"
-        # Accesses your status engine to bench (stun) the target for 2 rounds
-        state["statuses"][target]["sleep"] = 2
-        game_log(f"🟥 RED CARD! {target.upper()} committed a flagrant foul and is SENT OFF for 2 turns!", "#ff3333")
+            goal_damage = max(35, self.state["base_damage"] * 6)
+            self.game_log(f"⚽ GOAL!!! {attacker.upper()} completely fooled the keeper and scores {goal_damage} damage!", "#2ecc71")
+            self.state[f"{defender}_hp"] -= goal_damage
+            if self.check_game_over(): return
+            self.trigger_damage_cutscene(defender, goal_damage)
             
-    update_status_displays()
-    check_game_over()
+        if self.check_game_over(): return
+        self.update_status_displays()
 
-def run_mutation_phase():
-    global mutation_turn_toggle
-    clear_action_space()
-    game_log("\n⚡ ARENA MUTATION SEQUENCE ENGAGED ⚡", "#e056fd")
-    
-    first, second = ("player", "cpu") if mutation_turn_toggle else ("cpu", "player")
-    mutation_turn_toggle = not mutation_turn_toggle
-    
-    def process_second_actor():
-        if second == "player":
-            render_player_mutation_cards(lambda: advance_round())
+    # =====================================================================
+    # COMBAT MAINPIPELINE EXECUTION CODES
+    # =====================================================================
+    def execute_strike(self, attacker, defender, trivia_result):
+        if not self.game_active: return
+        if self.state["rules"]["fifty_fifty"]:
+            self.game_log("\n🎲 50/50 ACTIVE — PURGING ALL COIN FLIPS", "#e74c3c")
+            winner = random.choice(["player", "cpu"])
+            loser = "cpu" if winner == "player" else "player"
+            self.state[f"{loser}_hp"] = 0
+            self.game_log(f"🏆 {winner.upper()} INSANELY CLAIMS AUTOMATIC VICTORY", "#ffcc00")
+            self.check_game_over()
+            return
+
+        base = self.state["base_damage"]
+        damage = base
+
+        if self.state["statuses"][attacker]["burn"] > 0:
+            damage = max(1, damage // 2)
+        if self.state["rules"]["guns_enabled"]:
+            damage += 10
+            self.game_log("💥 Guns are blazing!", "#ff5722")
+        if self.state["rules"]["double_damage"]: damage *= 2
+        if self.state["rules"]["sudden_death"]: damage *= 3
+        if self.state["rules"]["random_damage_spike"]: damage *= random.randint(1, 4)
+        if self.state["rules"]["crit_boost"] and random.random() < 0.4:
+            self.game_log("✨ CRITICAL HIT EMITTED!", "#ffeb3b")
+            damage *= 2
+
+        if trivia_result == "correct":
+            damage *= 2
+            self.game_log("🔥 Trivia Multiplier Boost active!")
+        elif trivia_result == "wrong":
+            damage = max(1, damage // 2)
+            self.game_log("💀 Trivia Deficit penalty applied")
+
+        damage = int(damage)
+        defense = self.state["player_defense"] if defender == "player" else self.state["cpu_defense"]
+        
+        if self.state["rules"]["reverse_damage"]:
+            actual_change = -damage 
+            self.game_log(f"❤️ Reverse Damage active! {defender.upper()} absorbs fuel.", "#4caf50")
         else:
-            cpu_choice = get_weighted_mutations(1)[0]
-            apply_mutation(cpu_choice, "cpu")
-            advance_round()
+            actual_change = max(0, damage - defense)
 
-    def advance_round():
-        state["turn"] += 1
-        run_player_turn()
-
-    if first == "player":
-        render_player_mutation_cards(process_second_actor)
-    else:
-        cpu_choice = get_weighted_mutations(1)[0]
-        apply_mutation(cpu_choice, "cpu")
-        root.after(1000, process_second_actor)
-
-def render_player_mutation_cards(next_step_callback):
-    clear_action_space()
-    game_log("🃏 Displaying available modifications inside structural UI frames...")
-    
-    rnd_options = get_weighted_mutations(5)
-    available_cards = rnd_options + state["player_deck"]
-    
-    # Grid generation for mutation mechanics
-    card_container = tk.Frame(action_area, bg="#121212")
-    card_container.pack(expand=True, fill="both")
-    
-    def select_card(name):
-        if name in state["player_deck"] and name not in rnd_options:
-            state["player_deck"].remove(name)
-        apply_mutation(name, "player")
-        clear_action_space()
-        next_step_callback()
+        self.state[f"{defender}_hp"] -= actual_change
+        self.game_log(f"⚔️ {attacker.upper()} strikes! Shifts balance by {actual_change} to {defender.upper()}.", "#ff7675")
         
-    for mutation in available_cards:
-        card = create_graphic_card(card_container, mutation, select_card)
-        card.pack(side="left", padx=8, pady=10, expand=True)
-
-# =========================
-# INITIAL DRAFT CARD INTERFACE
-# =========================
-
-def execute_deck_draft_gui():
-    """Builds a temporary fullscreen layout grid representing physical graphic cards for drafting."""
-    draft_window = tk.Frame(root, bg="#121212")
-    draft_window.place(relx=0, rely=0, relwidth=1, relheight=1)
-    
-    hdr = tk.Label(draft_window, text="🃏 DECK DRAFTING IN PROGRESS 🃏", font=("Courier", 20, "bold"), fg="#ffcc00", bg="#121212")
-    hdr.pack(pady=20)
-    
-    sub = tk.Label(draft_window, text="Acquire 3 modification vectors to safeguard in reserve memory.", font=("Courier", 11), fg="#ffffff", bg="#121212")
-    sub.pack(pady=5)
-    
-    counter_lbl = tk.Label(draft_window, text="Selected: 0 / 3", font=("Courier", 14), fg="#ffffff", bg="#121212")
-    counter_lbl.pack(pady=10)
-    
-    scroll_canvas = tk.Canvas(draft_window, bg="#1c1c1c", highlightthickness=0)
-    scrollbar = tk.Scrollbar(draft_window, orient="vertical", command=scroll_canvas.yview)
-    grid_frame = tk.Frame(scroll_canvas, bg="#1c1c1c")
-    
-    grid_frame.bind("<Configure>", lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
-    scroll_canvas.create_window((0, 0), window=grid_frame, anchor="nw")
-    scroll_canvas.configure(yscrollcommand=scrollbar.set)
-    
-    scroll_canvas.pack(side="left", fill="both", expand=True, padx=30, pady=10)
-    scrollbar.pack(side="right", fill="y")
-    
-    all_muts = list(MUTATION_WEIGHTS.keys())
-    
-    def draft_pick(name):
-        if len(state["player_deck"]) < 3:
-            state["player_deck"].append(name)
-            counter_lbl.config(text=f"Selected: {len(state['player_deck'])} / 3")
-            game_log(f"✔️ Saved modification card: {name}")
+        # --- CRITICAL FIX IS HERE ---
+        # If this hit ends the game, STOP completely. Do not roll statuses, do not trigger animations.
+        if self.check_game_over():
+            return
             
-            if len(state["player_deck"]) == 3:
-                draft_window.destroy()
-                initialize_battlefield_gui()
+        self.trigger_damage_cutscene(defender, actual_change)
+        self.apply_status_roll(defender)
+        
+        if self.check_game_over():
+            return
+            
+        self.update_status_displays()
 
-    # Populate grid with customized layout configurations
-    cols = 4
-    for index, mutation in enumerate(all_muts):
-        r = index // cols
-        c = index % cols
-        card = create_graphic_card(grid_frame, mutation, draft_pick)
-        card.grid(row=r, column=c, padx=15, pady=15)
+    def run_cpu_turn(self):
+        if not self.game_active: return
+        if not self.check_can_act("cpu"):
+            self.run_upkeep_phase()
+            return
 
-# =========================
-# GRAPHICAL LAYOUT INITIALIZATION
-# =========================
+        if self.state["rules"]["rps_mode"]:
+            opts = ["rock", "paper", "scissors"]
+            cpu_choice = random.choice(opts)
+            self.game_log("🤖 CPU is targeting your position! Defend in Rock Paper Scissors Mode.")
+            
+            self.clear_action_space()
+            if not self.action_area or not self.action_area.winfo_exists(): return
+            for move in opts:
+                btn = tk.Button(self.action_area, text=move.upper(), bg="#4b2a4a", fg="white", font=("Courier", 12),
+                                command=lambda m=move: self.resolve_rps("cpu", "player", cpu_choice, m))
+                btn.pack(side="left", expand=True, padx=10, pady=10)
+        else:
+            self.try_trivia("cpu", lambda outcome: [self.execute_strike("cpu", "player", outcome), 
+                                                   self.root.after(1000, self.run_upkeep_phase) if self.game_active else None])
 
-def initialize_battlefield_gui():
-    global player_panel, cpu_panel, p_hp_lbl, c_hp_lbl, turn_lbl, global_rules_lbl, rules_lbl, log_box, action_area
-    
-    # Top Control Status Banner
-    hud = tk.Frame(root, bg="#1a1a1a", height=100, highlightbackground="#333333", highlightthickness=1)
-    hud.pack(fill="x", side="top")
-    hud.pack_propagate(False)
-    
-    turn_lbl = tk.Label(hud, text="ROUND 1", font=("Courier", 18, "bold"), fg="#ffcc00", bg="#1a1a1a")
-    turn_lbl.pack(pady=5)
-    
-    global_rules_lbl = tk.Label(hud, text="", font=("Courier", 10), fg="#cccccc", bg="#1a1a1a")
-    global_rules_lbl.pack()
-    
-    rules_lbl = tk.Label(hud, text="Global Mutations: None", font=("Courier", 10, "italic"), fg="#e056fd", bg="#1a1a1a")
-    rules_lbl.pack(pady=2)
+    def run_player_turn(self):
+        if not self.game_active: return
+        self.clear_action_space()
+        if self.check_game_over(): return
+        self.update_status_displays()
+        self.processing_turn = False
+        
+        if not self.check_can_act("player"):
+            self.root.after(1000, self.run_cpu_turn)
+            return
 
-    # Core Combat Presentation Splitting Panels
-    arena_view = tk.Frame(root, bg="#121212")
-    arena_view.pack(fill="both", expand=True, pady=10)
-    
-    player_panel = tk.Frame(arena_view, bg="#1e272c", highlightbackground="#2a4d69", highlightthickness=3)
-    player_panel.pack(side="left", expand=True, fill="both", padx=20, pady=10)
-    
-    p_name = tk.Label(player_panel, text="OPERATOR (PLAYER)", font=("Courier", 14, "bold"), fg="#4fc3f7", bg="#1e272c")
-    p_name.pack(pady=10)
-    p_hp_lbl = tk.Label(player_panel, text="HP: 100", font=("Courier", 22, "bold"), fg="#ffffff", bg="#1e272c")
-    p_hp_lbl.pack(expand=True)
+        if not self.action_area or not self.action_area.winfo_exists():
+            return
 
-    cpu_panel = tk.Frame(arena_view, bg="#2c1e2b", highlightbackground="#4b2a4a", highlightthickness=3)
-    cpu_panel.pack(side="right", expand=True, fill="both", padx=20, pady=10)
-    
-    c_name = tk.Label(cpu_panel, text="CENTRAL UNIT (CPU)", font=("Courier", 14, "bold"), fg="#f06292", bg="#2c1e2b")
-    c_name.pack(pady=10)
-    c_hp_lbl = tk.Label(cpu_panel, text="HP: 100", font=("Courier", 22, "bold"), fg="#ffffff", bg="#2c1e2b")
-    c_hp_lbl.pack(expand=True)
+        if self.state["rules"]["rps_mode"]:
+            self.game_log("✂️ 📄 🪨 RPS SYSTEM TRIGGERED. CHOOSE ATTACK OBJECTIVE:")
+            opts = ["rock", "paper", "scissors"]
+            for move in opts:
+                btn = tk.Button(self.action_area, text=move.upper(), bg="#2a4d69", fg="white", font=("Courier", 12),
+                                command=lambda m=move: self.resolve_rps("player", "cpu", m, random.choice(opts)))
+                btn.pack(side="left", expand=True, padx=10, pady=10)
+        else:
+            atk_btn = tk.Button(self.action_area, text="LAUNCH STRIKE", font=("Courier", 14, "bold"), bg="#c0392b", fg="white",
+                                command=self.player_attack_clicked)
+            atk_btn.pack(fill="both", expand=True, padx=20, pady=20)
 
-    # Historical Action Output Logging Screen
-    log_container = tk.Frame(root, bg="#1a1a1a", height=150)
-    log_container.pack(fill="x", padx=20, pady=5)
-    log_container.pack_propagate(False)
-    
-    log_box = tk.Text(log_container, bg="#0a0a0a", fg="#ffffff", font=("Courier", 10), state='disabled', wrap='word')
-    log_box.pack(fill="both", expand=True)
+    def player_attack_clicked(self):
+        if not self.game_active or self.processing_turn: return
+        self.processing_turn = True
+        self.clear_action_space()
+        self.try_trivia("player", lambda outcome: [self.execute_strike("player", "cpu", outcome), 
+                                                   self.root.after(1000, self.run_cpu_turn) if self.game_active else None])
 
-    # Contextual Bottom Control Panel (Interactions/Cards get loaded inside here)
-    action_area = tk.Frame(root, bg="#1a1a1a", height=220, highlightbackground="#333333", highlightthickness=1)
-    action_area.pack(fill="x", side="bottom", padx=20, pady=10)
-    action_area.pack_propagate(False)
+    def resolve_rps(self, attacker, defender, choice, def_choice):
+        if not self.game_active: return
+        self.clear_action_space()
+        self.game_log(f"{attacker.upper()} deployed {choice.upper()}! {defender.upper()} countered with {def_choice.upper()}!")
+        win_conditions = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
+        
+        if choice == def_choice:
+            self.game_log("🤝 Mutual Parity! Stalemate reached - No impact sustained.", "#bdc3c7")
+        elif win_conditions[choice] == def_choice:
+            dmg = self.state["base_damage"] * 3
+            self.game_log(f"🎯 {attacker.upper()} DOMINATED MATCHUP! Deals {dmg} fatal damage!", "#2ecc71")
+            self.state[f"{defender}_hp"] -= dmg
+            if self.check_game_over(): return
+            self.trigger_damage_cutscene(defender, dmg)
+        else:
+            self.game_log(f"🛡️ {defender.upper()} DEFLECTED THE OUTCOME! Deflection protocols active.", "#e74c3c")
+            
+        if self.check_game_over():
+            return
+            
+        self.update_status_displays()
+        
+        if attacker == "player":
+            self.root.after(1000, self.run_cpu_turn)
+        else:
+            self.root.after(1000, self.run_upkeep_phase)
 
-    update_status_displays()
-    check_updater_signals()
-    run_player_turn()
+    # =====================================================================
+    # UPKEEP RUNTIME ENGINE
+    # =====================================================================
+    def run_upkeep_phase(self):
+        if not self.game_active: return
+        self.game_log("\n⏳ Round Upkeep Processing...", "#95a5a6")
+        
+        for actor in ["player", "cpu"]:
+            s = self.state["statuses"][actor]
+            if s["poison"] > 0:
+                self.game_log(f"🍄 {actor.upper()} suffers 5 Poison breakdown damage.")
+                self.state[f"{actor}_hp"] -= 5
+                s["poison"] -= 1
+            if s["burn"] > 0:
+                self.game_log(f"🔥 {actor.upper()} suffers 3 Burn thermal damage.")
+                self.state[f"{actor}_hp"] -= 3
+                s["burn"] -= 1
+                
+        if self.state["rules"]["regen"]:
+            self.state["player_hp"] += self.state["regen_value"]
+            self.state["cpu_hp"] += self.state["regen_value"]
+            self.game_log(f"⏳ Nano-regeneration injected (+{self.state['regen_value']} HP global recovery)")
 
-# Run the app setup starting with drafting sequence
+        if self.bomb_timer is not None:
+            self.bomb_timer -= 1
+            self.game_log(f"💣 Bomb Fuse Warning: {self.bomb_timer} ticks until core meltdown!", "#e67e22")
+            if self.bomb_timer <= 0:
+                self.game_log("\n💣💥 THE INTEGRATED MATRIX BOMB HAS EXPLODED. COMBAT EQUALIZED IN A DRAW.", "#ff0000")
+                messagebox.showinfo("MATRIX DESTROYED", "The ticking payload detonated! Game Result: DRAW.")
+                self.shutdown_application()
+                return
+
+        if self.check_game_over(): return
+        self.update_status_displays()
+
+        if self.state["turn"] % 2 == 0:
+            self.run_mutation_phase()
+        else:
+            self.state["turn"] += 1
+            self.run_player_turn()
+
+    # =====================================================================
+    # MUTATION INTERACTION LOGIC PIPELINE
+    # =====================================================================
+    def apply_mutation(self, mutation, who):
+        if not self.game_active: return
+        self.game_log(f"⚡ {who.upper()} INJECTS OVERRIDE: {mutation}", "#ffcc00")
+
+        if mutation == "ENABLE_TRIVIA": self.state["rules"]["trivia"] = True
+        elif mutation == "ENABLE_GUNS": self.state["rules"]["guns_enabled"] = True
+        elif mutation == "DISABLE_GUNS": self.state["rules"]["guns_enabled"] = False
+        elif mutation == "DOUBLE_DAMAGE": self.state["rules"]["double_damage"] = True
+        elif mutation == "HALF_DAMAGE": self.state["base_damage"] = max(1, self.state["base_damage"] // 2)
+        elif mutation == "ADD_REGEN":
+            self.state["rules"]["regen"] = True
+            self.state["regen_value"] = 2
+        elif mutation == "SUDDEN_DEATH":
+            self.state["rules"]["sudden_death"] = True
+            self.state["player_hp"] = min(self.state["player_hp"], 30)
+            self.state["cpu_hp"] = min(self.state["cpu_hp"], 30)
+        elif mutation == "INCREASE_PLAYER_HP": self.state["player_hp"] += 20
+        elif mutation == "INCREASE_CPU_HP": self.state["cpu_hp"] += 20
+        elif mutation == "DECREASE_PLAYER_HP": self.state["player_hp"] -= 10
+        elif mutation == "DECREASE_CPU_HP": self.state["cpu_hp"] -= 10
+        elif mutation == "INCREASE_BASE_DAMAGE": self.state["base_damage"] += 2
+        elif mutation == "DECREASE_BASE_DAMAGE": self.state["base_damage"] = max(1, self.state["base_damage"] - 2)
+        elif mutation == "REVERSE_DAMAGE": self.state["rules"]["reverse_damage"] = True
+        elif mutation == "ENABLE_SHIELDS":
+            self.state["player_defense"] += 2
+            self.state["cpu_defense"] += 2
+        elif mutation == "CRIT_BOOST": self.state["rules"]["crit_boost"] = True
+        elif mutation == "CRIT_REDUCE": self.state["rules"]["crit_boost"] = False
+        elif mutation == "SWAP_HP": self.state["player_hp"], self.state["cpu_hp"] = self.state["cpu_hp"], self.state["player_hp"]
+        elif mutation == "STEAL_HP":
+            if who == "player":
+                self.state["player_hp"] += 10; self.state["cpu_hp"] -= 10
+            else:
+                self.state["cpu_hp"] += 10; self.state["player_hp"] -= 10
+        elif mutation == "HP_EQUALISE":
+            avg = (self.state["player_hp"] + self.state["cpu_hp"]) // 2
+            self.state["player_hp"] = self.state["cpu_hp"] = avg
+        elif mutation == "GLOBAL_DAMAGE_BOOST": self.state["base_damage"] += 3
+        elif mutation == "GLOBAL_DAMAGE_REDUCE": self.state["base_damage"] = max(1, self.state["base_damage"] - 3)
+        elif mutation == "RANDOM_DAMAGE_SPIKE": self.state["rules"]["random_damage_spike"] = True
+        elif mutation == "LOW_HP_WIN": self.state["rules"]["low_hp_win"] = True
+        elif mutation == "HIGH_HP_WIN": self.state["rules"]["high_hp_win"] = True
+        elif mutation == "ENABLE_RPS": self.state["rules"]["rps_mode"] = True
+        elif mutation == "BOMB_INSTALL": self.bomb_timer = random.randint(6, 15)
+        elif mutation == "BOMB_ACCELERATE":
+            if self.bomb_timer is not None: self.bomb_timer = max(1, self.bomb_timer - 3)
+        elif mutation == "BOMB_SLOW":
+            if self.bomb_timer is not None: self.bomb_timer += 3
+        elif mutation == "INFUSE_POISON": self.state["rules"]["infuse_poison"] = True
+        elif mutation == "INFUSE_BURN": self.state["rules"]["infuse_burn"] = True
+        elif mutation == "INFUSE_SLEEP": self.state["rules"]["infuse_sleep"] = True
+        elif mutation == "INFUSE_PARALYZE": self.state["rules"]["infuse_paralyze"] = True
+        elif mutation == "INFUSE_FREEZE": self.state["rules"]["infuse_freeze"] = True
+        elif mutation == "INFUSE_ACID": self.state["rules"]["infuse_acid"] = True
+        elif mutation == "ENABLE_50_50": self.state["rules"]["fifty_fifty"] = True
+        elif mutation == "DEFUSE_EFFECTS":
+            for k in self.state["rules"]:
+                if "infuse" in k: self.state["rules"][k] = False
+        elif mutation == "PENALTY_SHOOTOUT_LTM":
+            self.play_penalty_shootout(who, "cpu" if who == "player" else "player")
+        elif mutation == "RED_CARD_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state["statuses"][target]["sleep"] = 2
+            self.game_log(f"🟥 RED CARD! {target.upper()} is SENT OFF for 2 turns!", "#ff3333")
+        elif mutation == "OVERCHARGE_LTM":
+            self.state["base_damage"] += 15
+            self.game_log("⚡ Season 1 Unlock: Core Base damage overclocked!", "#00d2d3")
+        elif mutation == "NANITE_SHIELD_LTM":
+            self.state[f"{who}_defense"] += 10
+            self.game_log(f"⚡ Season 1 Unlock: Nano-shields assigned to {who.upper()}!", "#00d2d3")
+        elif mutation == "VAMPIRE_FANG_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state[f"{who}_hp"] += 25
+            self.state[f"{target}_hp"] -= 25
+            self.game_log(f"⚡ Season 1 Unlock: Drained 25 HP structural points from {target.upper()}!", "#00d2d3")
+        elif mutation == "ECLIPSE_LTM":
+            self.state["rules"]["reverse_damage"] = not self.state["rules"]["reverse_damage"]
+            self.game_log("⚡ Season 1 Unlock: Damage vector orientation inverted!", "#00d2d3")
+        elif mutation == "SINGULARITY_LTM":
+            self.state["player_hp"] = random.randint(10, 150)
+            self.state["cpu_hp"] = random.randint(10, 150)
+            self.game_log("⚡ Season 1 Unlock: Matrix instability observed! Structural HP randomized.", "#00d2d3")
+                
+        if self.check_game_over(): return
+        self.update_status_displays()
+
+    def run_mutation_phase(self):
+        if not self.game_active: return
+        self.clear_action_space()
+        self.game_log("\n⚡ ARENA MUTATION SEQUENCE ENGAGED ⚡", "#e056fd")
+        
+        first, second = ("player", "cpu") if self.mutation_turn_toggle else ("cpu", "player")
+        self.mutation_turn_toggle = not self.mutation_turn_toggle
+        
+        def process_second_actor():
+            if not self.game_active: return
+            if second == "player":
+                self.render_player_mutation_cards(lambda: advance_round())
+            else:
+                cpu_choice = self.get_weighted_mutations(1)[0]
+                self.apply_mutation(cpu_choice, "cpu")
+                advance_round()
+
+        def advance_round():
+            if not self.game_active: return
+            self.state["turn"] += 1
+            self.run_player_turn()
+
+        if first == "player":
+            self.render_player_mutation_cards(process_second_actor)
+        else:
+            cpu_choice = self.get_weighted_mutations(1)[0]
+            self.apply_mutation(cpu_choice, "cpu")
+            self.root.after(1000, process_second_actor)
+
+    def render_player_mutation_cards(self, next_step_callback):
+        if not self.game_active: return
+        self.clear_action_space()
+        self.game_log("🃏 Displaying available modifications inside structural UI frames...")
+        
+        rnd_options = self.get_weighted_mutations(5)
+        available_cards = rnd_options + self.state["player_deck"]
+        
+        if not self.action_area or not self.action_area.winfo_exists(): return
+        card_container = tk.Frame(self.action_area, bg="#121212")
+        card_container.pack(expand=True, fill="both")
+        
+        def select_card(name):
+            if name in self.state["player_deck"] and name not in rnd_options:
+                self.state["player_deck"].remove(name)
+            self.apply_mutation(name, "player")
+            self.clear_action_space()
+            next_step_callback()
+            
+        for mutation in available_cards:
+            card = self.create_graphic_card(card_container, mutation, select_card)
+            card.pack(side="left", padx=8, pady=10, expand=True)
+
+    # =====================================================================
+    # LAYOUT ENGINE SCREEN CONTROLLERS
+    # =====================================================================
+    def execute_deck_draft_gui(self):
+        self.draft_frame = tk.Frame(self.root, bg="#121212")
+        self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        
+        control_banner = tk.Frame(self.draft_frame, bg="#1a1a1a", height=80)
+        control_banner.pack(fill="x", side="top")
+        
+        hdr = tk.Label(control_banner, text="🃏 DECK DRAFTING MATRIX 🃏", font=("Courier", 18, "bold"), fg="#ffcc00", bg="#1a1a1a")
+        hdr.pack(side="left", padx=20, pady=10)
+        
+        pass_btn = tk.Button(control_banner, text="👾 VIEW SEASON PASS", font=("Courier", 11, "bold"), bg="#431f5c", fg="#e056fd",
+                             command=self.display_season_pass_gui)
+        pass_btn.pack(side="right", padx=20, pady=15)
+        
+        self.counter_lbl = tk.Label(self.draft_frame, text=f"Selected Requirements: {len(self.state['player_deck'])} / 3", font=("Courier", 13), fg="#ffffff", bg="#121212")
+        self.counter_lbl.pack(pady=10)
+        
+        scroll_canvas = tk.Canvas(self.draft_frame, bg="#1c1c1c", highlightthickness=0)
+        scrollbar = tk.Scrollbar(self.draft_frame, orient="vertical", command=scroll_canvas.yview)
+        grid_frame = tk.Frame(scroll_canvas, bg="#1c1c1c")
+        
+        grid_frame.bind("<Configure>", lambda e: scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all")))
+        scroll_canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+        scroll_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        scroll_canvas.pack(side="left", fill="both", expand=True, padx=30, pady=10)
+        scrollbar.pack(side="right", fill="y")
+        
+        all_muts = list(MUTATION_WEIGHTS.keys()) + [r["id"] for r in SEASON_PASS_REWARDS]
+        
+        def draft_pick(name):
+            if len(self.state["player_deck"]) < 3:
+                if name not in self.state["player_deck"]:
+                    self.state["player_deck"].append(name)
+                    self.counter_lbl.config(text=f"Selected Requirements: {len(self.state['player_deck'])} / 3")
+                    self.game_log(f"✔️ Saved modification card to slot allocation: {name}")
+                    
+                    if len(self.state["player_deck"]) == 3:
+                        self.draft_frame.destroy()
+                        if self.pass_frame: self.pass_frame.destroy()
+                        self.initialize_battlefield_gui()
+
+        cols = 4
+        for index, mutation in enumerate(all_muts):
+            r = index // cols
+            c = index % cols
+            card = self.create_graphic_card(grid_frame, mutation, draft_pick)
+            card.grid(row=r, column=c, padx=15, pady=15)
+
+    def display_season_pass_gui(self):
+        if self.draft_frame: 
+            self.draft_frame.place_forget()
+            
+        self.pass_frame = tk.Frame(self.root, bg="#0d0d11")
+        self.pass_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        
+        top_bar = tk.Frame(self.pass_frame, bg="#161623", height=70)
+        top_bar.pack(fill="x", side="top")
+        
+        title_lbl = tk.Label(top_bar, text="⚡ SEASON 1 BATTLE PASS ⚡", font=("Courier", 18, "bold"), fg="#00d2d3", bg="#161623")
+        title_lbl.pack(side="left", padx=20, pady=15)
+        
+        return_btn = tk.Button(top_bar, text="⬅️ RETURN TO DECK DRAFT", font=("Courier", 11, "bold"), bg="#222f3e", fg="#c8d6e5",
+                               command=self.hide_season_pass_gui)
+        return_btn.pack(side="right", padx=20, pady=15)
+        
+        xp_container = tk.Frame(self.pass_frame, bg="#1a1a24", highlightbackground="#333344", highlightthickness=1)
+        xp_container.pack(fill="x", padx=40, pady=20)
+        
+        xp_status_text = f"Profile Progression Status: {self.player_xp} Total S1_XP"
+        xp_info_lbl = tk.Label(xp_container, text=xp_status_text, font=("Courier", 13, "bold"), fg="#ffffff", bg="#1a1a24")
+        xp_info_lbl.pack(anchor="w", padx=15, pady=10)
+        
+        bar_bg = tk.Frame(xp_container, bg="#2d2d3d", height=25)
+        bar_bg.pack(fill="x", padx=15, pady=10)
+        
+        max_possible_xp = 1200
+        progress_ratio = min(1.0, self.player_xp / max_possible_xp)
+        
+        progress_fill = tk.Frame(bar_bg, bg="#00d2d3", height=25)
+        progress_fill.place(relx=0, rely=0, relwidth=progress_ratio, relheight=1)
+        
+        rewards_scroll_canvas = tk.Canvas(self.pass_frame, bg="#0d0d11", highlightthickness=0)
+        rewards_scrollbar = tk.Scrollbar(self.pass_frame, orient="vertical", command=rewards_scroll_canvas.yview)
+        rewards_grid = tk.Frame(rewards_scroll_canvas, bg="#0d0d11")
+        
+        rewards_grid.bind("<Configure>", lambda e: rewards_scroll_canvas.configure(scrollregion=rewards_scroll_canvas.bbox("all")))
+        rewards_scroll_canvas.create_window((0, 0), window=rewards_grid, anchor="nw")
+        rewards_scroll_canvas.configure(yscrollcommand=rewards_scrollbar.set)
+        
+        rewards_scroll_canvas.pack(side="left", fill="both", expand=True, padx=40, pady=10)
+        rewards_scrollbar.pack(side="right", fill="y")
+        
+        for index, item in enumerate(SEASON_PASS_REWARDS):
+            status_color = "#00d2d3" if self.player_xp >= item["xp_required"] else "#ff7675"
+            status_txt = "✔️ UNLOCKED ACCESSIBLE" if self.player_xp >= item["xp_required"] else f"🔒 LOCK REMOVAL: {item['xp_required']} XP"
+            
+            row_item = tk.Frame(rewards_grid, bg="#161623", highlightbackground="#333344", highlightthickness=1, width=820, height=80)
+            row_item.pack(fill="x", pady=8, padx=5)
+            row_item.pack_propagate(False)
+            
+            tier_lbl = tk.Label(row_item, text=f"TIER {item['tier']}", font=("Courier", 14, "bold"), fg="#ff9f43", bg="#161623")
+            tier_lbl.pack(side="left", padx=15)
+            
+            meta_container = tk.Frame(row_item, bg="#161623")
+            meta_container.pack(side="left", fill="both", pady=10, padx=10)
+            
+            item_title = tk.Label(meta_container, text=item["id"].replace("_", " "), font=("Courier", 12, "bold"), fg="#ffffff", bg="#161623")
+            item_title.pack(anchor="w")
+            
+            item_desc = tk.Label(meta_container, text=item["desc"], font=("Courier", 9), fg="#a4b0be", bg="#161623")
+            item_desc.pack(anchor="w")
+            
+            state_lbl = tk.Label(row_item, text=status_txt, font=("Courier", 11, "bold"), fg=status_color, bg="#161623")
+            state_lbl.pack(side="right", padx=20)
+
+    def hide_season_pass_gui(self):
+        if self.pass_frame:
+            self.pass_frame.destroy()
+        if self.draft_frame:
+            self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+    def initialize_battlefield_gui(self):
+        hud = tk.Frame(self.root, bg="#1a1a1a", height=100, highlightbackground="#333333", highlightthickness=1)
+        hud.pack(fill="x", side="top")
+        hud.pack_propagate(False)
+        
+        self.turn_lbl = tk.Label(hud, text="ROUND 1", font=("Courier", 18, "bold"), fg="#ffcc00", bg="#1a1a1a")
+        self.turn_lbl.pack(pady=5)
+        
+        self.global_rules_lbl = tk.Label(hud, text="", font=("Courier", 10), fg="#cccccc", bg="#1a1a1a")
+        self.global_rules_lbl.pack()
+        
+        self.rules_lbl = tk.Label(hud, text="Global Mutations: None", font=("Courier", 10, "italic"), fg="#e056fd", bg="#1a1a1a")
+        self.rules_lbl.pack(pady=2)
+
+        arena_view = tk.Frame(self.root, bg="#121212")
+        arena_view.pack(fill="both", expand=True, pady=10)
+        
+        self.player_panel = tk.Frame(arena_view, bg="#1e272c", highlightbackground="#2a4d69", highlightthickness=3)
+        self.player_panel.pack(side="left", expand=True, fill="both", padx=20, pady=10)
+        
+        p_name = tk.Label(self.player_panel, text="OPERATOR (PLAYER)", font=("Courier", 14, "bold"), fg="#4fc3f7", bg="#1e272c")
+        p_name.pack(pady=10)
+        self.p_hp_lbl = tk.Label(self.player_panel, text="HP: 100", font=("Courier", 22, "bold"), fg="#ffffff", bg="#1e272c")
+        self.p_hp_lbl.pack(expand=True)
+
+        self.cpu_panel = tk.Frame(arena_view, bg="#2c1e2b", highlightbackground="#4b2a4a", highlightthickness=3)
+        self.cpu_panel.pack(side="right", expand=True, fill="both", padx=20, pady=10)
+        
+        c_name = tk.Label(self.cpu_panel, text="CENTRAL UNIT (CPU)", font=("Courier", 14, "bold"), fg="#f06292", bg="#2c1e2b")
+        c_name.pack(pady=10)
+        self.c_hp_lbl = tk.Label(self.cpu_panel, text="HP: 100", font=("Courier", 22, "bold"), fg="#ffffff", bg="#2c1e2b")
+        self.c_hp_lbl.pack(expand=True)
+
+        log_container = tk.Frame(self.root, bg="#1a1a1a", height=150)
+        log_container.pack(fill="x", padx=20, pady=5)
+        log_container.pack_propagate(False)
+        
+        self.log_box = tk.Text(log_container, bg="#0a0a0a", fg="#ffffff", font=("Courier", 10), state='disabled', wrap='word')
+        self.log_box.pack(fill="both", expand=True)
+
+        self.action_area = tk.Frame(self.root, bg="#1a1a1a", height=220, highlightbackground="#333333", highlightthickness=1)
+        self.action_area.pack(fill="x", side="bottom", padx=20, pady=10)
+        self.action_area.pack_propagate(False)
+
+        self.update_status_displays()
+        self.run_player_turn()
+
+# =====================================================================
+# SYSTEM APPLICATION ENTRY POINT ENTRY
+# =====================================================================
 if __name__ == "__main__":
-    execute_deck_draft_gui()
-    root.mainloop()
+    main_root = tk.Tk()
+    app = MutationArenaApp(main_root)
+    app.execute_deck_draft_gui()
+    main_root.mainloop()
