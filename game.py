@@ -6,6 +6,7 @@ import json
 import os
 import tkinter as tk
 from tkinter import messagebox, simpledialog
+from datetime import datetime, timezone, timedelta
 import updater
 
 # =====================================================================
@@ -24,7 +25,7 @@ MUTATION_WEIGHTS = {
     "INFUSE_ACID": 7, "ENABLE_50_50": 2, "DEFUSE_EFFECTS": 3,
     "PENALTY_SHOOTOUT_LTM": 3, "RED_CARD_LTM": 2,
     
-    # NEW BONUS MUTATIONS
+    # BONUS MUTATIONS
     "ARMOR_PIERCE": 7,
     "LIFE_STEAL": 6,
     "DAMAGE_REFLECT": 5,
@@ -33,7 +34,6 @@ MUTATION_WEIGHTS = {
     "HARDCORE_MODE": 3,
 }
 
-# Exclusive Season 1 Battle Pass Tier Unlocks
 SEASON_PASS_REWARDS = [
     {"tier": 1, "xp_required": 100, "id": "OVERCHARGE_LTM", "desc": "Instantly shifts Base Damage significantly."},
     {"tier": 2, "xp_required": 250, "id": "NANITE_SHIELD_LTM", "desc": "Generates persistent mechanical defenses."},
@@ -68,12 +68,15 @@ class MutationArenaApp:
         self.bomb_timer = None
         self.mutation_turn_toggle = True
         self.processing_turn = False
-        self.game_active = True  # Track if a match phase is valid
+        self.game_active = True 
         
-        # State Matrix Mapping Initialization
+        # Define Static Chrono Targets (Anchor: July 13, 2026, 12 PM UTC)
+        self.season_end = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)
+        self.season_start = self.season_end - timedelta(days=28) # 4-week structured block
+        
+        # Dynamic State Setup
         self.state = {}
         self.clear_rules_dict()
-
         self.state.update({
             "player_hp": 150, "cpu_hp": 150, "base_damage": 10,
             "player_defense": 0, "cpu_defense": 0, "turn": 1, "player_deck": [],
@@ -97,18 +100,85 @@ class MutationArenaApp:
         self.draft_frame = None
         self.pass_frame = None
         self.counter_lbl = None
+        self.event_banner_lbl = None
 
-        # Execute Profile Data Layer
+        # Profile Execution Data Layer
         self.xp_file = "xp.json"
         self.player_xp = 0
         self.load_xp_profile()
 
-        # Spin up Asynchronous Threading Channels
+        # Spin up Asynchronous Threading Channels safely
         threading.Thread(target=self.start_updater, daemon=True).start()
         self.check_updater_signals()
 
+    def get_current_event_state(self):
+        """Calculates current season countdown and figures out which weekly macro 
+        event window and weekend multiplier rules apply based on structural timelines.
+        """
+        now = datetime.now(timezone.utc)
+        time_remaining = self.season_end - now
+        
+        if time_remaining.total_seconds() <= 0:
+            return {"active": False, "multiplier": 1, "label": "Season Concluded", "cd": "0d 0h", "weekend": False}
+            
+        # Determine current structural week index inside the 4-week window
+        days_passed = (now - self.season_start).total_seconds() / 86400
+        current_week = int(days_passed // 7) + 1  # Standardizes ranges to Weeks 1, 2, 3, or 4
+        
+        # Assign structural baseline multipliers based on calendar matrix rows
+        week_multipliers = {1: 3, 2: 2, 3: 1, 4: 10}
+        week_labels = {
+            1: "3X XP Launch Event",
+            2: "2X XP Mid-Season Surge",
+            3: "Standard Operational Phase",
+            4: "10X GRAND FINALE CRASH"
+        }
+        
+        target_mult = week_multipliers.get(current_week, 1)
+        target_lbl = week_labels.get(current_week, "Standard Phase")
+        
+        # Identify if current execution day falls inside the explicit Weekend Target Frame (Friday 12 PM UTC - Monday 12 PM UTC)
+        is_weekend = False
+        current_weekday = now.weekday() # Mon=0, Tue=1 ... Fri=4, Sat=5, Sun=6
+        
+        # Find structural boundary timestamps for the immediate weekend
+        days_until_friday = (4 - current_weekday) % 7
+        if current_weekday in [4, 5, 6, 0]: # Actively processing around weekend boundaries
+            if current_weekday == 0 and now.hour >= 12:
+                days_until_friday = 4 # Past Monday boundary cutoff, forward trace to next Friday
+            else:
+                if current_weekday == 0: days_until_friday = -3
+                else: days_until_friday = -(current_weekday - 4)
+                
+        wknd_start = datetime(now.year, now.month, now.day, 12, 0, 0, tzinfo=timezone.utc) + timedelta(days=days_until_friday)
+        wknd_end = wknd_start + timedelta(days=3)
+        
+        if wknd_start <= now <= wknd_end:
+            is_weekend = True
+            
+        final_multiplier = target_mult if is_weekend else 1
+        
+        # Build out structural string countdown data formatting
+        days = time_remaining.days
+        hours, remainder = divmod(time_remaining.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        countdown_str = f"{days}d {hours:02d}h {minutes:02d}m"
+        
+        return {
+            "active": True,
+            "multiplier": final_multiplier,
+            "base_multiplier": target_mult,
+            "label": target_lbl,
+            "cd": countdown_str,
+            "weekend": is_weekend,
+            "wknd_start": wknd_start,
+            "wknd_end": wknd_end
+        }
+
+    def get_xp_multiplier(self):
+        return self.get_current_event_state()["multiplier"]
+
     def clear_rules_dict(self):
-        """Helper to safely build out a fresh, unmutated baseline configuration rules mapping."""
         self.state["rules"] = {
             "guns_enabled": False, "trivia": False, "double_damage": False, "regen": False,
             "sudden_death": False, "reverse_damage": False, "random_damage_spike": False,
@@ -116,34 +186,27 @@ class MutationArenaApp:
             "infuse_poison": False, "infuse_burn": False, "infuse_sleep": False,
             "infuse_paralyze": False, "infuse_freeze": False, "infuse_acid": False, "fifty_fifty": False,
             "overcharge": False, "nanite_shield": False, "vampire_fang": False, "eclipse": False, "singularity": False,
-            
-            # BONUS RULES KEYS
             "armor_pierce": False, "life_steal": False, "damage_reflect": False, "poison_all": False
         }
 
     def reset_game_state(self):
-        """Purges active combat modifications and reloads profile state for a guaranteed clean 150 HP reset."""
         self.load_xp_profile()
-    
         self.bomb_timer = None
         self.mutation_turn_toggle = True
         self.processing_turn = False
         self.game_active = True
-    
-        self.state = {
+        
+        self.state.update({
             "player_hp": 150, "cpu_hp": 150, "base_damage": 10,
-            "player_defense": 0, "cpu_defense": 0, "turn": 1, "player_deck": [],
+            "player_defense": 0, "cpu_defense": 0, "turn": 1,
             "statuses": {
                 "player": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False},
                 "cpu": {"poison": 0, "burn": 0, "sleep": 0, "paralyze": False, "freeze": False}
             },
             "regen_value": 0
-        }
+        })
         self.clear_rules_dict()
 
-    # =====================================================================
-    # XP PERMANENT RETRIEVAL & SAVE UTILITIES
-    # =====================================================================
     def load_xp_profile(self):
         if os.path.exists(self.xp_file):
             try:
@@ -165,9 +228,13 @@ class MutationArenaApp:
             print(f"[Fatal Storage Error] Could not parse save data stream: {e}")
 
     def add_match_xp(self, base_reward=120):
-        self.player_xp += base_reward
+        ev = self.get_current_event_state()
+        final_reward = base_reward * ev["multiplier"]
+        self.player_xp += final_reward
         self.save_xp_profile()
-        self.game_log(f"⭐ Data streams synchronized! Acquired +{base_reward} S1_XP (Current Profile Total: {self.player_xp})", "#ffcc00")
+        
+        event_tag = f" [GLOBAL {ev['multiplier']}X MULTIPLIER ACTIVE]" if ev["multiplier"] > 1 else ""
+        self.game_log(f"⭐ Data vectors merged! Received +{final_reward} S1_XP{event_tag} (Total: {self.player_xp})", "victory")
 
     def is_reward_unlocked(self, reward_id):
         for item in SEASON_PASS_REWARDS:
@@ -176,7 +243,7 @@ class MutationArenaApp:
         return True
 
     # =====================================================================
-    # SYSTEM CONTROL MANAGEMENT
+    # THREAD-SAFE APPLICATION MANAGEMENT
     # =====================================================================
     def request_game_shutdown(self):
         self.update_requested = True
@@ -200,45 +267,46 @@ class MutationArenaApp:
         sys.exit(0)
 
     # =====================================================================
-    # GRAPHICAL INTERFACE AND UTILITY CONTROLLERS
+    # REFACTORED GRAPHICAL INTERFACE AND STYLED LOG CHANNELS
     # =====================================================================
-    def game_log(self, message, color="#ffffff"):
+    def init_log_tags(self):
+        """Pre-allocates standard styling metrics to avoid tag memory leaking maps."""
+        self.log_box.tag_config("system", foreground="#ffcc00")
+        self.log_box.tag_config("combat", foreground="#ff7675")
+        self.log_box.tag_config("victory", foreground="#2ecc71")
+        self.log_box.tag_config("trivia", foreground="#4fc3f7")
+        self.log_box.tag_config("normal", foreground="#ffffff")
+
+    def game_log(self, message, style_tag="normal"):
         print(message)
         if self.log_box is not None and self.log_box.winfo_exists():
             try:
                 self.log_box.configure(state='normal')
-                tag_name = "color_" + str(time.time()).replace(".", "_")
-                self.log_box.tag_config(tag_name, foreground=color)
-                self.log_box.insert(tk.END, message + "\n", tag_name)
+                self.log_box.insert(tk.END, message + "\n", style_tag)
                 self.log_box.see(tk.END)
                 self.log_box.configure(state='disabled')
             except Exception:
                 pass
 
     def update_status_displays(self):
-        # Safety guard to prevent configuring elements that were destroyed
-        if not self.p_hp_lbl or not self.p_hp_lbl.winfo_exists():
-            return
+        if not self.p_hp_lbl or not self.p_hp_lbl.winfo_exists(): return
             
-        if self.p_hp_lbl and self.c_hp_lbl and self.turn_lbl and self.global_rules_lbl and self.rules_lbl:
-            self.p_hp_lbl.config(text=f"HP: {self.state['player_hp']}")
-            self.c_hp_lbl.config(text=f"HP: {self.state['cpu_hp']}")
-            self.turn_lbl.config(text=f"ROUND {self.state['turn']}")
-            
-            stats_text = f"Base Attack Value: {self.state['base_damage']}  |  Shield Capacity (P/C): {self.state['player_defense']}/{self.state['cpu_defense']}"
-            if self.bomb_timer is not None:
-                stats_text += f"  |  💣 BOMB COUNTDOWN: {self.bomb_timer}"
-            self.global_rules_lbl.config(text=stats_text)
-            
-            active_rules = [k for k, v in self.state["rules"].items() if v]
-            self.rules_lbl.config(text="Global Mutations: " + (", ".join(active_rules) if active_rules else "None"))
+        self.p_hp_lbl.config(text=f"HP: {self.state['player_hp']}")
+        self.c_hp_lbl.config(text=f"HP: {self.state['cpu_hp']}")
+        self.turn_lbl.config(text=f"ROUND {self.state['turn']}")
+        
+        stats_text = f"Base Attack Value: {self.state['base_damage']}  |  Shield Capacity (P/C): {self.state['player_defense']}/{self.state['cpu_defense']}"
+        if self.bomb_timer is not None:
+            stats_text += f"  |  💣 BOMB COUNTDOWN: {self.bomb_timer}"
+        self.global_rules_lbl.config(text=stats_text)
+        
+        active_rules = [k for k, v in self.state["rules"].items() if v]
+        self.rules_lbl.config(text="Global Mutations: " + (", ".join(active_rules) if active_rules else "None"))
 
     def get_weighted_mutations(self, k):
         population = list(MUTATION_WEIGHTS.keys())
-        
         for r in SEASON_PASS_REWARDS:
-            if self.is_reward_unlocked(r["id"]):
-                population.append(r["id"])
+            if self.is_reward_unlocked(r["id"]): population.append(r["id"])
 
         weights = [MUTATION_WEIGHTS.get(mut, 5) for mut in population]
         chosen = []
@@ -250,14 +318,10 @@ class MutationArenaApp:
             weights.pop(idx)
         return chosen
 
-    # =====================================================================
-    # VISUAL ANIMATIONS
-    # =====================================================================
     def trigger_damage_cutscene(self, target, damage_dealt):
         if not self.game_active: return
         target_frame = self.player_panel if target == "player" else self.cpu_panel
-        if not target_frame or not target_frame.winfo_exists():
-            return
+        if not target_frame or not target_frame.winfo_exists(): return
         original_bg = target_frame.cget("bg")
         
         def flash(count):
@@ -265,8 +329,7 @@ class MutationArenaApp:
             if count <= 0:
                 target_frame.config(bg=original_bg)
                 return
-            current_color = "#b21c1c" if count % 2 == 0 else original_bg
-            target_frame.config(bg=current_color)
+            target_frame.config(bg="#b21c1c" if count % 2 == 0 else original_bg)
             self.root.after(60, lambda: flash(count - 1))
 
         def shake(step, current_x=0):
@@ -296,50 +359,28 @@ class MutationArenaApp:
     def clear_action_space(self):
         if self.action_area and self.action_area.winfo_exists():
             for widget in self.action_area.winfo_children():
-                if widget.winfo_exists():
-                    widget.destroy()
+                if widget.winfo_exists(): widget.destroy()
 
-    # =====================================================================
-    # CARD DESIGN STYLE PARSING REGIME
-    # =====================================================================
     def get_card_design(self, mutation_key):
-        display_name = mutation_key
-        is_ltm = False
-        
-        if mutation_key.endswith("_LTM"):
-            display_name = mutation_key[:-4]
-            is_ltm = True
-            
-        display_name = display_name.replace("_", " ")
-        
-        is_pass_exclusive = any(r["id"] == mutation_key for r in SEASON_PASS_REWARDS)
-        if is_pass_exclusive:
+        display_name = mutation_key.replace("_LTM", "").replace("_", " ")
+        if mutation_key.endswith("_LTM") and any(r["id"] == mutation_key for r in SEASON_PASS_REWARDS):
             if not self.is_reward_unlocked(mutation_key):
                 return f"🔒 [LOCKED TIER]\n{display_name}", "#242424", "#555555", "#888888", "#242424"
-            else:
-                return f"🌟 {display_name}", "#1b262c", "#00d2d3", "#00d2d3", "#223a47"
-
-        if is_ltm:
+            return f"🌟 {display_name}", "#1b262c", "#00d2d3", "#00d2d3", "#223a47"
+        if mutation_key.endswith("_LTM"):
             return display_name, "#2c1a3a", "#e056fd", "#e056fd", "#431f5c"
         
-        offensive_keywords = ["DAMAGE", "GUNS", "CRIT", "STRIKE", "INFUSE", "PIERCE"]
-        vitality_keywords = ["HP", "REGEN", "EQUALISE", "SHIELDS", "STEAL", "LIFE"]
-        chaos_keywords = ["BOMB", "50_50", "RPS", "SWAP", "REVERSE", "REFLECT", "WARP", "POISON_ALL"]
-        
-        if mutation_key == "HARDCORE_MODE":
-            return display_name, "#3a0000", "#ff0000", "#ff3333", "#5c0000"
-        elif any(kw in mutation_key for kw in offensive_keywords):
+        if mutation_key == "HARDCORE_MODE": return display_name, "#3a0000", "#ff0000", "#ff3333", "#5c0000"
+        if any(kw in mutation_key for kw in ["DAMAGE", "GUNS", "CRIT", "STRIKE", "INFUSE", "PIERCE"]):
             return display_name, "#2d1414", "#ff4757", "#ff4757", "#4a1c1c"
-        elif any(kw in mutation_key for kw in vitality_keywords):
+        if any(kw in mutation_key for kw in ["HP", "REGEN", "EQUALISE", "SHIELDS", "STEAL", "LIFE"]):
             return display_name, "#112415", "#2ed573", "#2ed573", "#1b3d22"
-        elif any(kw in mutation_key for kw in chaos_keywords):
+        if any(kw in mutation_key for kw in ["BOMB", "50_50", "RPS", "SWAP", "REVERSE", "REFLECT", "WARP", "POISON_ALL"]):
             return display_name, "#26210f", "#ffa502", "#ffa502", "#403714"
-            
         return display_name, "#1e222b", "#70a1ff", "#70a1ff", "#2f3640"
 
     def create_graphic_card(self, parent, title, command_callback):
         display_name, bg_color, border_color, text_color, hover_bg = self.get_card_design(title)
-        
         card = tk.Frame(parent, bg=bg_color, highlightbackground=border_color, highlightthickness=2, width=160, height=200)
         card.pack_propagate(False)
         
@@ -347,66 +388,49 @@ class MutationArenaApp:
         lbl.pack(expand=True, fill="both", padx=10, pady=10)
         
         is_locked = "🔒" in display_name
-
         def trigger_click(e): 
-            if not is_locked:
-                command_callback(title)
-            else:
-                messagebox.showwarning("Access Vector Restricted", "This mutation card requires additional S1_XP profiles to clear lock permissions.")
+            if not is_locked: command_callback(title)
+            else: messagebox.showwarning("Access Vector Restricted", "Acquire additional S1_XP profiles to unlock.")
                 
         card.bind("<Button-1>", trigger_click)
         lbl.bind("<Button-1>", trigger_click)
-        
         if not is_locked:
             card.bind("<Enter>", lambda e: card.config(bg=hover_bg))
             card.bind("<Leave>", lambda e: card.config(bg=bg_color))
             lbl.bind("<Enter>", lambda e: [card.config(bg=hover_bg), lbl.config(bg=hover_bg)])
             lbl.bind("<Leave>", lambda e: [card.config(bg=bg_color), lbl.config(bg=bg_color)])
-        
         return card
 
     # =====================================================================
-    # BOX CHECKS & REPLAY LOOPS
+    # COMBAT AND GAME TERMINATION CHECK LOOPS
     # =====================================================================
     def check_game_over(self):
         if not self.game_active: return True
-        
-        p_dead = self.state["player_hp"] <= 0
-        c_dead = self.state["cpu_hp"] <= 0
+        p_dead, c_dead = self.state["player_hp"] <= 0, self.state["cpu_hp"] <= 0
 
         if p_dead or c_dead:
-            self.game_active = False  # Shut down background loops immediately
-            
-            # Safely log final update before wiping panels
-            if self.p_hp_lbl and self.p_hp_lbl.winfo_exists():
-                self.update_status_displays()
+            self.game_active = False  
+            self.update_status_displays()
                 
-            title = "⚡ ARENA TERMINATION ⚡"
             msg = f"Final Standings:\nPlayer HP: {self.state['player_hp']} | CPU HP: {self.state['cpu_hp']}\n\n"
-            
             p_won = False
             if self.state["rules"]["low_hp_win"]:
                 if self.state["player_hp"] < self.state["cpu_hp"]: p_won = True
             elif self.state["rules"]["high_hp_win"]:
                 if self.state["player_hp"] > self.state["cpu_hp"]: p_won = True
-            elif c_dead and not p_dead:
-                p_won = True
+            elif c_dead and not p_dead: p_won = True
 
             if p_won:
                 msg += "PLAYER WINS! Synchronizing data vectors...\n\n"
-                self.add_match_xp(10)  
+                self.add_match_xp(120)  
             else:
                 msg += "MATCH CONCLUDED.\n\n"
-                self.add_match_xp(5)   
+                self.add_match_xp(40)   
                 
-            msg += "Would you like to draft a new deck and play another match?"
-            replay = messagebox.askyesno(title, msg)
-            
+            replay = messagebox.askyesno("⚡ ARENA TERMINATION ⚡", msg + "Draft a new deck and play another match?")
             if replay:
                 for widget in self.root.winfo_children():
-                    if widget.winfo_exists():
-                        widget.destroy()
-                
+                    if widget.winfo_exists(): widget.destroy()
                 self.reset_game_state()
                 self.execute_deck_draft_gui()
             else:
@@ -421,25 +445,24 @@ class MutationArenaApp:
             return
 
         q = random.choice(TRIVIA)
-        self.game_log(f"❓ TRIVIA OVERRIDE ISSUED FOR {attacker.upper()}!", "#4fc3f7")
+        self.game_log(f"❓ TRIVIA OVERRIDE ISSUED FOR {attacker.upper()}!", "trivia")
         
         if attacker == "cpu":
             ans = q["a"] if random.random() > 0.5 else "wrong_answer"
             self.game_log(f"CPU selected: {ans}")
-            if ans == q["a"]:
-                self.game_log("✔ CPU Answer Correct!", "#81c784")
-                complete_callback("correct")
-            else:
-                self.game_log("✖ CPU Answer Incorrect!", "#e57373")
-                complete_callback("wrong")
+            complete_callback("correct" if ans == q["a"] else "wrong")
         else:
             user_ans = simpledialog.askstring("TRIVIA TIME!", f"Question: {q['q']}")
-            user_ans = user_ans.strip().lower() if user_ans else ""
+            if user_ans is None:
+                self.game_log("✖ Player skipped trivia and forfeit the challenge turn sequence.", "trivia")
+                complete_callback("forfeit")
+                return
+            user_ans = user_ans.strip().lower()
             if user_ans == q["a"]:
-                self.game_log("✔ Player Answer Correct!", "#81c784")
+                self.game_log("✔ Player Answer Correct!", "victory")
                 complete_callback("correct")
             else:
-                self.game_log("✖ Player Answer Incorrect!", "#e57373")
+                self.game_log("✖ Player Answer Incorrect!", "combat")
                 complete_callback("wrong")
 
     def apply_status_roll(self, defender):
@@ -447,46 +470,45 @@ class MutationArenaApp:
         chance = 0.3
         if self.state["rules"]["infuse_poison"] and random.random() < chance:
             self.state["statuses"][defender]["poison"] += 3
-            self.game_log(f"🍄 {defender.upper()} was Poisoned for 3 turns!", "#a9dfbf")
+            self.game_log(f"🍄 {defender.upper()} was Poisoned for 3 turns!")
         if self.state["rules"]["infuse_burn"] and random.random() < chance:
             self.state["statuses"][defender]["burn"] += 3
-            self.game_log(f"🔥 {defender.upper()} was Burned for 3 turns!", "#f5b041")
+            self.game_log(f"🔥 {defender.upper()} was Burned for 3 turns!")
         if self.state["rules"]["infuse_sleep"] and random.random() < chance:
             self.state["statuses"][defender]["sleep"] = random.randint(1, 2)
-            self.game_log(f"💤 {defender.upper()} fell asleep!", "#aed6f1")
+            self.game_log(f"💤 {defender.upper()} fell asleep!")
         if self.state["rules"]["infuse_paralyze"] and random.random() < chance:
             self.state["statuses"][defender]["paralyze"] = True
-            self.game_log(f"⚡ {defender.upper()} is Paralyzed!", "#f9e79f")
+            self.game_log(f"⚡ {defender.upper()} is Paralyzed!")
         if self.state["rules"]["infuse_freeze"] and random.random() < chance:
             self.state["statuses"][defender]["freeze"] = True
-            self.game_log(f"🧊 {defender.upper()} was Frozen solid!", "#5dedf5")
+            self.game_log(f"🧊 {defender.upper()} was Frozen solid!")
         if self.state["rules"]["infuse_acid"] and random.random() < chance:
             self.state["statuses"][defender]["poison"] += 1
-            self.game_log(f"🧪 {defender.upper()} hit with Acid! (+1 turn Poison)", "#58d68d")
+            self.game_log(f"🧪 {defender.upper()} hit with Acid! (+1 turn Poison)")
 
     def check_can_act(self, actor):
         if not self.game_active: return False
         s = self.state["statuses"][actor]
         if s["sleep"] > 0:
-            self.game_log(f"💤 {actor.upper()} is fast asleep...", "#5da2f5")
+            self.game_log(f"💤 {actor.upper()} is fast asleep...")
             s["sleep"] -= 1
             return False
         if s["freeze"]:
             if random.random() < 0.25:
-                self.game_log(f"🧊✨ {actor.upper()} thawed out!", "#5dedf5")
+                self.game_log(f"🧊✨ {actor.upper()} thawed out!")
                 s["freeze"] = False
             else:
-                self.game_log(f"🧊 {actor.upper()} is frozen solid!", "#5dedf5")
+                self.game_log(f"🧊 {actor.upper()} is frozen solid!")
                 return False
-        if s["paralyze"]:
-            if random.random() < 0.25:
-                self.game_log(f"⚡ {actor.upper()} is fully paralyzed and skips action!", "#f9e79f")
-                return False
+        if s["paralyze"] and random.random() < 0.25:
+            self.game_log(f"⚡ {actor.upper()} is fully paralyzed and skips action!")
+            return False
         return True
 
     def play_penalty_shootout(self, attacker, defender):
         if not self.game_active: return
-        self.game_log(f"\n⚽ {attacker.upper()} IS TAKING A PENALTY KICK!", "#e67e22")
+        self.game_log(f"\n⚽ {attacker.upper()} IS TAKING A PENALTY KICK!", "system")
         directions = ["left", "center", "right"]
         
         if attacker == "player":
@@ -505,104 +527,83 @@ class MutationArenaApp:
                 gk_save = simpledialog.askstring("INVALID DIRECTION", "Choose left, center, or right:")
                 if gk_save: gk_save = gk_save.strip().lower()
 
-        self.game_log(f"👟 {attacker.upper()} shoots {strike.upper()}!", "#ffffff")
-        self.game_log(f"🧤 {defender.upper()} dives {gk_save.upper()}!", "#ffffff")
+        self.game_log(f"👟 {attacker.upper()} shoots {strike.upper()}!")
+        self.game_log(f"🧤 {defender.upper()} dives {gk_save.upper()}!")
         
         if strike == gk_save:
-            self.game_log(f"❌ GREAT SAVE! {defender.upper()} blocked the shot! Counter-attack dealing 10 damage to {attacker.upper()}!", "#e74c3c")
+            self.game_log(f"❌ GREAT SAVE! {defender.upper()} blocked the shot! Counter-attack dealing 10 damage to {attacker.upper()}!", "combat")
             self.state[f"{attacker}_hp"] -= 10
             if self.check_game_over(): return
             self.trigger_damage_cutscene(attacker, 10)
         else:
             goal_damage = max(35, self.state["base_damage"] * 6)
-            self.game_log(f"⚽ GOAL!!! {attacker.upper()} completely fooled the keeper and scores {goal_damage} damage!", "#2ecc71")
+            self.game_log(f"⚽ GOAL!!! {attacker.upper()} completely fooled the keeper and scores {goal_damage} damage!", "victory")
             self.state[f"{defender}_hp"] -= goal_damage
             if self.check_game_over(): return
             self.trigger_damage_cutscene(defender, goal_damage)
             
-        if self.check_game_over(): return
         self.update_status_displays()
 
     # =====================================================================
-    # COMBAT MAIN PIPELINE EXECUTION CODES
+    # REFACTORED WORKER COMBAT SYSTEM PIPELINE
     # =====================================================================
     def execute_strike(self, attacker, defender, trivia_result):
         if not self.game_active: return
-        if not self.player_panel or not self.player_panel.winfo_exists():
+        if trivia_result == "forfeit":
+            self.game_log(f"🛡️ Turn skipped due to forfeit protocols.")
             return
-            
+
         if self.state["rules"]["fifty_fifty"]:
-            self.game_log("\n🎲 50/50 ACTIVE — PURGING ALL COIN FLIPS", "#e74c3c")
+            self.game_log("\n🎲 50/50 ACTIVE — PURGING ALL COIN FLIPS", "combat")
             winner = random.choice(["player", "cpu"])
-            loser = "cpu" if winner == "player" else "player"
-            self.state[f"{loser}_hp"] = 0
-            self.game_log(f"🏆 {winner.upper()} INSANELY CLAIMS AUTOMATIC VICTORY", "#ffcc00")
+            self.state["cpu" if winner == "player" else "player"] = 0
+            self.game_log(f"🏆 {winner.upper()} INSANELY CLAIMS AUTOMATIC VICTORY", "system")
             self.check_game_over()
             return
 
-        base = self.state["base_damage"]
-        damage = base
-
-        if self.state["statuses"][attacker]["burn"] > 0:
-            damage = max(1, damage // 2)
+        damage = self.state["base_damage"]
+        if self.state["statuses"][attacker]["burn"] > 0: damage = max(1, damage // 2)
         if self.state["rules"]["guns_enabled"]:
             damage += 10
-            self.game_log("💥 Guns are blazing!", "#ff5722")
+            self.game_log("💥 Guns are blazing!", "combat")
         if self.state["rules"]["double_damage"]: damage *= 2
         if self.state["rules"]["sudden_death"]: damage *= 3
         if self.state["rules"]["random_damage_spike"]: damage *= random.randint(1, 4)
         if self.state["rules"]["crit_boost"] and random.random() < 0.4:
-            self.game_log("✨ CRITICAL HIT EMITTED!", "#ffeb3b")
+            self.game_log("✨ CRITICAL HIT EMITTED!", "system")
             damage *= 2
 
-        if trivia_result == "correct":
-            damage *= 2
-            self.game_log("🔥 Trivia Multiplier Boost active!")
-        elif trivia_result == "wrong":
-            damage = max(1, damage // 2)
-            self.game_log("💀 Trivia Deficit penalty applied")
+        if trivia_result == "correct": damage *= 2
+        elif trivia_result == "wrong": damage = max(1, damage // 2)
 
         damage = int(damage)
-        defense = self.state["player_defense"] if defender == "player" else self.state["cpu_defense"]
-        
-        # BONUS EFFECT: Armor Pierce
-        if self.state["rules"].get("armor_pierce"):
-            defense = 0
+        defense = 0 if self.state["rules"].get("armor_pierce") else (self.state["player_defense"] if defender == "player" else self.state["cpu_defense"])
         
         if self.state["rules"]["reverse_damage"]:
             actual_change = -damage 
-            self.game_log(f"❤️ Reverse Damage active! {defender.upper()} absorbs fuel.", "#4caf50")
+            self.game_log(f"❤️ Reverse Damage active! {defender.upper()} absorbs structural points.")
         else:
             actual_change = max(0, damage - defense)
 
         self.state[f"{defender}_hp"] -= actual_change
-        self.game_log(f"⚔️ {attacker.upper()} strikes! Shifts balance by {actual_change} to {defender.upper()}.", "#ff7675")
-        
-        # If this hit ends the game, STOP completely. Do not roll statuses, do not trigger animations.
-        if self.check_game_over():
-            return
+        self.game_log(f"⚔️ {attacker.upper()} strikes! Shifts balance by {actual_change} to {defender.upper()}.", "combat")
+        if self.check_game_over(): return
             
         self.trigger_damage_cutscene(defender, actual_change)
         
-        # BONUS EFFECT: Life Steal
         if self.state["rules"].get("life_steal") and actual_change > 0:
             heal = actual_change // 2
             self.state[f"{attacker}_hp"] += heal
-            self.game_log(f"🩸 Life Steal: {attacker.upper()} recovered {heal} HP", "#2ed573")
+            self.game_log(f"🩸 Life Steal: {attacker.upper()} recovered {heal} HP", "victory")
             
-        # BONUS EFFECT: Damage Reflect
         if self.state["rules"].get("damage_reflect") and actual_change > 0:
             reflect = max(3, actual_change // 3)
             self.state[f"{attacker}_hp"] -= reflect
-            self.game_log(f"🔄 Damage Reflect! {attacker.upper()} took {reflect} backlash damage!", "#e74c3c")
-            if self.check_game_over(): 
-                return
+            self.game_log(f"🔄 Damage Reflect! {attacker.upper()} took {reflect} backlash damage!", "combat")
+            if self.check_game_over(): return
 
         self.apply_status_roll(defender)
-        
-        if self.check_game_over():
-            return
-            
+        if self.check_game_over(): return
         self.update_status_displays()
 
     def run_cpu_turn(self):
@@ -615,9 +616,7 @@ class MutationArenaApp:
             opts = ["rock", "paper", "scissors"]
             cpu_choice = random.choice(opts)
             self.game_log("🤖 CPU is targeting your position! Defend in Rock Paper Scissors Mode.")
-            
             self.clear_action_space()
-            if not self.action_area or not self.action_area.winfo_exists(): return
             for move in opts:
                 btn = tk.Button(self.action_area, text=move.upper(), bg="#4b2a4a", fg="white", font=("Courier", 12),
                                 command=lambda m=move: self.resolve_rps("cpu", "player", cpu_choice, m))
@@ -637,15 +636,11 @@ class MutationArenaApp:
             self.root.after(1000, self.run_cpu_turn)
             return
 
-        if not self.action_area or not self.action_area.winfo_exists():
-            return
-
         if self.state["rules"]["rps_mode"]:
-            self.game_log("✂️ 📄 🪨 RPS SYSTEM TRIGGERED. CHOOSE ATTACK OBJECTIVE:")
-            opts = ["rock", "paper", "scissors"]
-            for move in opts:
+            self.game_log("✂️ 📄 🪨 RPS SYSTEM ACTIVE. CHOOSE DEFENSE SYMBOL:")
+            for move in ["rock", "paper", "scissors"]:
                 btn = tk.Button(self.action_area, text=move.upper(), bg="#2a4d69", fg="white", font=("Courier", 12),
-                                command=lambda m=move: self.resolve_rps("player", "cpu", m, random.choice(opts)))
+                                command=lambda m=move: self.resolve_rps("player", "cpu", m, random.choice(["rock", "paper", "scissors"])))
                 btn.pack(side="left", expand=True, padx=10, pady=10)
         else:
             atk_btn = tk.Button(self.action_area, text="LAUNCH STRIKE", font=("Courier", 14, "bold"), bg="#c0392b", fg="white",
@@ -666,43 +661,31 @@ class MutationArenaApp:
         win_conditions = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
         
         if choice == def_choice:
-            self.game_log("🤝 Mutual Parity! Stalemate reached - No impact sustained.", "#bdc3c7")
+            self.game_log("🤝 Mutual Parity! No structural impact sustained.", "normal")
         elif win_conditions[choice] == def_choice:
             dmg = self.state["base_damage"] * 3
-            self.game_log(f"🎯 {attacker.upper()} DOMINATED MATCHUP! Deals {dmg} fatal damage!", "#2ecc71")
+            self.game_log(f"🎯 {attacker.upper()} DOMINATED MATCHUP! Deals {dmg} fatal damage!", "victory")
             self.state[f"{defender}_hp"] -= dmg
             if self.check_game_over(): return
             self.trigger_damage_cutscene(defender, dmg)
         else:
-            self.game_log(f"🛡️ {defender.upper()} DEFLECTED THE OUTCOME! Deflection protocols active.", "#e74c3c")
+            self.game_log(f"🛡️ {defender.upper()} DEFLECTED THE OUTCOME!", "combat")
             
-        if self.check_game_over():
-            return
-            
+        if self.check_game_over(): return
         self.update_status_displays()
-        
-        if attacker == "player":
-            self.root.after(1000, self.run_cpu_turn)
-        else:
-            self.root.after(1000, self.run_upkeep_phase)
+        self.root.after(1000, self.run_cpu_turn if attacker == "player" else self.run_upkeep_phase)
 
-    # =====================================================================
-    # UPKEEP RUNTIME ENGINE
-    # =====================================================================
     def run_upkeep_phase(self):
         if not self.game_active: return
-        self.game_log("\n⏳ Round Upkeep Processing...", "#95a5a6")
+        self.game_log("\n⏳ Round Upkeep Processing...", "normal")
         
         for actor in ["player", "cpu"]:
             s = self.state["statuses"][actor]
-            
-            # BONUS EFFECT: Poison All checks integrated seamlessly with normal poisons
             if s["poison"] > 0 or self.state["rules"].get("poison_all"):
                 dmg = 5 if s["poison"] > 0 else 3
-                self.game_log(f"🍄 {actor.upper()} suffers {dmg} Poison breakdown damage.")
+                self.game_log(f"🍄 {actor.upper()} suffers {dmg} Poison damage.")
                 self.state[f"{actor}_hp"] -= dmg
-                if s["poison"] > 0:
-                    s["poison"] -= 1
+                if s["poison"] > 0: s["poison"] -= 1
                     
             if s["burn"] > 0:
                 self.game_log(f"🔥 {actor.upper()} suffers 3 Burn thermal damage.")
@@ -716,9 +699,9 @@ class MutationArenaApp:
 
         if self.bomb_timer is not None:
             self.bomb_timer -= 1
-            self.game_log(f"💣 Bomb Fuse Warning: {self.bomb_timer} ticks until core meltdown!", "#e67e22")
+            self.game_log(f"💣 Bomb Fuse Warning: {self.bomb_timer} ticks until core meltdown!", "system")
             if self.bomb_timer <= 0:
-                self.game_log("\n💣💥 THE INTEGRATED MATRIX BOMB HAS EXPLODED. COMBAT EQUALIZED IN A DRAW.", "#ff0000")
+                self.game_log("\n💣💥 PAYLOAD HAS DETONATED. INSTABILITY RESULTED IN A DRAW.", "combat")
                 messagebox.showinfo("MATRIX DESTROYED", "The ticking payload detonated! Game Result: DRAW.")
                 self.shutdown_application()
                 return
@@ -726,44 +709,38 @@ class MutationArenaApp:
         if self.check_game_over(): return
         self.update_status_displays()
 
-        if self.state["turn"] % 2 == 0:
-            self.run_mutation_phase()
+        if self.state["turn"] % 2 == 0: self.run_mutation_phase()
         else:
             self.state["turn"] += 1
             self.run_player_turn()
 
     # =====================================================================
-    # MUTATION INTERACTION LOGIC PIPELINE
+    # SAFE HOOK MUTATION SEQUENCER
     # =====================================================================
     def apply_mutation(self, mutation, who):
         if not self.game_active: return
-        self.game_log(f"⚡ {who.upper()} INJECTS OVERRIDE: {mutation}", "#ffcc00")
+        self.game_log(f"⚡ {who.upper()} INJECTS OVERRIDE: {mutation}", "system")
 
-        # === HARDCORE MODE ===
         if mutation == "HARDCORE_MODE":
-            self.game_log("☠️ HARDCORE MODE ACTIVATED!", "#ff0000")
-            self.reset_game_state()  # Full 150 HP base layout wipe
+            self.game_log("☠️ HARDCORE INTERFACES LOADED! SYSTEM ADJUSTING...", "combat")
+            self.processing_turn = True
+            self.clear_action_space()
+            
+            # Safe reset values to prevent race conditions
             self.state["player_hp"] = 15
             self.state["cpu_hp"] = 150
             self.clear_rules_dict()
+            self.update_status_displays()
             self.root.after(800, lambda: self.hardcore_pick_two())
             return
 
-        # New Normal Bonus Mutations
-        elif mutation == "ARMOR_PIERCE":
-            self.state["rules"]["armor_pierce"] = True
-        elif mutation == "LIFE_STEAL":
-            self.state["rules"]["life_steal"] = True
-        elif mutation == "DAMAGE_REFLECT":
-            self.state["rules"]["damage_reflect"] = True
+        elif mutation == "ARMOR_PIERCE": self.state["rules"]["armor_pierce"] = True
+        elif mutation == "LIFE_STEAL": self.state["rules"]["life_steal"] = True
+        elif mutation == "DAMAGE_REFLECT": self.state["rules"]["damage_reflect"] = True
         elif mutation == "TIME_WARP":
-            self.state["turn"] += 1  # Skip next mutation phase trigger index
-            self.game_log("⏭️ Time Warp: Next mutation phase skipped!", "#9b59b6")
-        elif mutation == "POISON_ALL":
-            self.state["rules"]["poison_all"] = True
-            self.game_log("☣️ Both players will suffer poison each upkeep!", "#a9dfbf")
-
-        # Original Base Mutations
+            self.state["turn"] += 1  
+            self.game_log("⏭️ Time Warp: Next mutation phase skipped!")
+        elif mutation == "POISON_ALL": self.state["rules"]["poison_all"] = True
         elif mutation == "ENABLE_TRIVIA": self.state["rules"]["trivia"] = True
         elif mutation == "ENABLE_GUNS": self.state["rules"]["guns_enabled"] = True
         elif mutation == "DISABLE_GUNS": self.state["rules"]["guns_enabled"] = False
@@ -790,10 +767,9 @@ class MutationArenaApp:
         elif mutation == "CRIT_REDUCE": self.state["rules"]["crit_boost"] = False
         elif mutation == "SWAP_HP": self.state["player_hp"], self.state["cpu_hp"] = self.state["cpu_hp"], self.state["player_hp"]
         elif mutation == "STEAL_HP":
-            if who == "player":
-                self.state["player_hp"] += 10; self.state["cpu_hp"] -= 10
-            else:
-                self.state["cpu_hp"] += 10; self.state["player_hp"] -= 10
+            t = "player" if who == "player" else "cpu"
+            o = "cpu" if who == "player" else "player"
+            self.state[f"{t}_hp"] += 10; self.state[f"{o}_hp"] -= 10
         elif mutation == "HP_EQUALISE":
             avg = (self.state["player_hp"] + self.state["cpu_hp"]) // 2
             self.state["player_hp"] = self.state["cpu_hp"] = avg
@@ -823,63 +799,44 @@ class MutationArenaApp:
         elif mutation == "RED_CARD_LTM":
             target = "cpu" if who == "player" else "player"
             self.state["statuses"][target]["sleep"] = 2
-            self.game_log(f"🟥 RED CARD! {target.upper()} is SENT OFF for 2 turns!", "#ff3333")
-        elif mutation == "OVERCHARGE_LTM":
-            self.state["base_damage"] += 15
-            self.game_log("⚡ Season 1 Unlock: Core Base damage overclocked!", "#00d2d3")
-        elif mutation == "NANITE_SHIELD_LTM":
-            self.state[f"{who}_defense"] += 10
-            self.game_log(f"⚡ Season 1 Unlock: Nano-shields assigned to {who.upper()}!", "#00d2d3")
+            self.game_log(f"🟥 RED CARD! {target.upper()} sent off for 2 rounds!", "combat")
+        elif mutation == "OVERCHARGE_LTM": self.state["base_damage"] += 15
+        elif mutation == "NANITE_SHIELD_LTM": self.state[f"{who}_defense"] += 10
         elif mutation == "VAMPIRE_FANG_LTM":
             target = "cpu" if who == "player" else "player"
-            self.state[f"{who}_hp"] += 25
-            self.state[f"{target}_hp"] -= 25
-            self.game_log(f"⚡ Season 1 Unlock: Drained 25 HP structural points from {target.upper()}!", "#00d2d3")
-        elif mutation == "ECLIPSE_LTM":
-            self.state["rules"]["reverse_damage"] = not self.state["rules"]["reverse_damage"]
-            self.game_log("⚡ Season 1 Unlock: Damage vector orientation inverted!", "#00d2d3")
+            self.state[f"{who}_hp"] += 25; self.state[f"{target}_hp"] -= 25
+        elif mutation == "ECLIPSE_LTM": self.state["rules"]["reverse_damage"] = not self.state["rules"]["reverse_damage"]
         elif mutation == "SINGULARITY_LTM":
             self.state["player_hp"] = random.randint(10, 150)
             self.state["cpu_hp"] = random.randint(10, 150)
-            self.game_log("⚡ Season 1 Unlock: Matrix instability observed! Structural HP randomized.", "#00d2d3")
                 
         if self.check_game_over(): return
         self.update_status_displays()
 
     def hardcore_pick_two(self):
-        """Player picks 2 mutations at start of Hardcore Mode (safely filters out baseline HP configurations)"""
         if not self.game_active: return
-        
-        self.game_log("🛡️ HARDCORE SURVIVAL DRAFT: Choose 2 mutations to survive...", "#ff9800")
-        
-        health_mutations = {"INCREASE_PLAYER_HP", "DECREASE_PLAYER_HP", "INCREASE_CPU_HP", 
-                           "DECREASE_CPU_HP", "SWAP_HP", "STEAL_HP", "HP_EQUALISE"}
-        
+        self.game_log("🛡️ HARDCORE SURVIVAL DRAFT: Pick 2 options to build context...", "system")
+        health_mutations = {"INCREASE_PLAYER_HP", "DECREASE_PLAYER_HP", "INCREASE_CPU_HP", "DECREASE_CPU_HP", "SWAP_HP", "STEAL_HP", "HP_EQUALISE"}
         all_options = [m for m in MUTATION_WEIGHTS.keys() if m not in health_mutations]
         options = random.sample(all_options, min(6, len(all_options)))
         
         self.clear_action_space()
         container = tk.Frame(self.action_area, bg="#121212")
         container.pack(expand=True, fill="both")
-        
         picked = []
         
         def pick(mut):
             if mut in picked: return
             picked.append(mut)
             self.apply_mutation(mut, "player")
-            
             if len(picked) == 2:
                 self.clear_action_space()
                 self.state["turn"] = 1
                 self.run_player_turn()
-            else:
-                lbl.config(text=f"Choose mutation {len(picked)+1}/2")
+            else: lbl.config(text=f"Choose mutation {len(picked)+1}/2")
         
-        lbl = tk.Label(container, text="Choose mutation 1/2", font=("Courier", 14, "bold"),
-                       fg="#ffcc00", bg="#121212")
+        lbl = tk.Label(container, text="Choose mutation 1/2", font=("Courier", 14, "bold"), fg="#ffcc00", bg="#121212")
         lbl.pack(pady=10)
-        
         for m in options:
             card = self.create_graphic_card(container, m, pick)
             card.pack(side="left", padx=10, pady=10, expand=True)
@@ -887,18 +844,16 @@ class MutationArenaApp:
     def run_mutation_phase(self):
         if not self.game_active: return
         self.clear_action_space()
-        self.game_log("\n⚡ ARENA MUTATION SEQUENCE ENGAGED ⚡", "#e056fd")
+        self.game_log("\n⚡ ARENA MUTATION SEQUENCE ENGAGED ⚡", "system")
         
         first, second = ("player", "cpu") if self.mutation_turn_toggle else ("cpu", "player")
         self.mutation_turn_toggle = not self.mutation_turn_toggle
         
         def process_second_actor():
             if not self.game_active: return
-            if second == "player":
-                self.render_player_mutation_cards(lambda: advance_round())
+            if second == "player": self.render_player_mutation_cards(lambda: advance_round())
             else:
-                cpu_choice = self.get_weighted_mutations(1)[0]
-                self.apply_mutation(cpu_choice, "cpu")
+                self.apply_mutation(self.get_weighted_mutations(1)[0], "cpu")
                 advance_round()
 
         def advance_round():
@@ -906,22 +861,18 @@ class MutationArenaApp:
             self.state["turn"] += 1
             self.run_player_turn()
 
-        if first == "player":
-            self.render_player_mutation_cards(process_second_actor)
+        if first == "player": self.render_player_mutation_cards(process_second_actor)
         else:
-            cpu_choice = self.get_weighted_mutations(1)[0]
-            self.apply_mutation(cpu_choice, "cpu")
+            self.apply_mutation(self.get_weighted_mutations(1)[0], "cpu")
             self.root.after(1000, process_second_actor)
 
     def render_player_mutation_cards(self, next_step_callback):
         if not self.game_active: return
         self.clear_action_space()
-        self.game_log("🃏 Displaying available modifications inside structural UI frames...")
         
         rnd_options = self.get_weighted_mutations(5)
         available_cards = rnd_options + self.state["player_deck"]
         
-        if not self.action_area or not self.action_area.winfo_exists(): return
         card_container = tk.Frame(self.action_area, bg="#121212")
         card_container.pack(expand=True, fill="both")
         
@@ -937,11 +888,46 @@ class MutationArenaApp:
             card.pack(side="left", padx=8, pady=10, expand=True)
 
     # =====================================================================
-    # LAYOUT ENGINE SCREEN CONTROLLERS
+    # LAYOUT ENGINE SCREEN CONTROLLERS WITH DYNAMIC EVENT TRACKING
     # =====================================================================
+    def update_draft_banner_loop(self):
+        if not self.draft_frame or not self.draft_frame.winfo_exists(): return
+        ev = self.get_current_event_state()
+        
+        if not ev["active"]:
+            self.event_banner_lbl.config(text="📡 SEASON COMPLETE: Standby for Season 2 deployment protocols.", bg="#1a1a1a", fg="#cccccc")
+            return
+
+        # Handle the 4-week calendar text layouts
+        if ev["weekend"]:
+            banner_text = f"🔥 BATTLE PASS EVENT LIVE: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
+            self.event_banner_lbl.config(text=banner_text, bg="#3a0000", fg="#ff3333")
+            
+            # Context Hook: Unlock Season 2 pass workspace designs during the Week 4 10X Finale
+            if ev["base_multiplier"] == 10:
+                banner_text += " [S2 DESIGN COMPONENT ACTIVE]"
+                self.event_banner_lbl.config(text=banner_text)
+        else:
+            # Weekend countdown parsing logic
+            now = datetime.now(timezone.utc)
+            time_until = ev["wknd_start"] - now
+            hours, remainder = divmod(int(time_until.total_seconds()), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            
+            # Format text based on upcoming weight rewards
+            upcoming_tag = f"{ev['base_multiplier']}X XP Weekend" if ev["base_multiplier"] > 1 else "Standard Event Block"
+            banner_text = f"⏳ UPCOMING WEEKEND: {upcoming_tag} starts in {time_until.days}d {hours:02d}h {minutes:02d}m | Season Timer: {ev['cd']}"
+            self.event_banner_lbl.config(text=banner_text, bg="#2c1a04", fg="#ffa502")
+            
+        self.root.after(1000, self.update_draft_banner_loop)
+
     def execute_deck_draft_gui(self):
         self.draft_frame = tk.Frame(self.root, bg="#121212")
         self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        
+        self.event_banner_lbl = tk.Label(self.draft_frame, text="", font=("Courier", 11, "bold"), pady=6)
+        self.event_banner_lbl.pack(fill="x", side="top")
+        self.update_draft_banner_loop()
         
         control_banner = tk.Frame(self.draft_frame, bg="#1a1a1a", height=80)
         control_banner.pack(fill="x", side="top")
@@ -949,7 +935,17 @@ class MutationArenaApp:
         hdr = tk.Label(control_banner, text="🃏 DECK DRAFTING MATRIX 🃏", font=("Courier", 18, "bold"), fg="#ffcc00", bg="#1a1a1a")
         hdr.pack(side="left", padx=20, pady=10)
         
-        pass_btn = tk.Button(control_banner, text="👾 VIEW SEASON PASS", font=("Courier", 11, "bold"), bg="#431f5c", fg="#e056fd",
+        ev = self.get_current_event_state()
+        if ev["active"] and ev["weekend"] and ev["base_multiplier"] == 10:
+            pass_text = "🎨 DESIGN SEASON 2 PASS"
+            bg_c = "#005f73"
+            fg_c = "#94d2bd"
+        else:
+            pass_text = "👾 VIEW SEASON PASS"
+            bg_c = "#431f5c"
+            fg_c = "#e056fd"
+
+        pass_btn = tk.Button(control_banner, text=pass_text, font=("Courier", 11, "bold"), bg=bg_c, fg=fg_c,
                              command=self.display_season_pass_gui)
         pass_btn.pack(side="right", padx=20, pady=15)
         
@@ -970,35 +966,31 @@ class MutationArenaApp:
         all_muts = list(MUTATION_WEIGHTS.keys()) + [r["id"] for r in SEASON_PASS_REWARDS]
         
         def draft_pick(name):
-            if len(self.state["player_deck"]) < 3:
-                if name not in self.state["player_deck"]:
-                    self.state["player_deck"].append(name)
-                    self.counter_lbl.config(text=f"Selected Requirements: {len(self.state['player_deck'])} / 3")
-                    self.game_log(f"✔️ Saved modification card to slot allocation: {name}")
-                    
-                    if len(self.state["player_deck"]) == 3:
-                        self.draft_frame.destroy()
-                        if self.pass_frame: self.pass_frame.destroy()
-                        self.initialize_battlefield_gui()
+            if len(self.state["player_deck"]) < 3 and name not in self.state["player_deck"]:
+                self.state["player_deck"].append(name)
+                self.counter_lbl.config(text=f"Selected Requirements: {len(self.state['player_deck'])} / 3")
+                if len(self.state["player_deck"]) == 3:
+                    self.draft_frame.destroy()
+                    if self.pass_frame: self.pass_frame.destroy()
+                    self.initialize_battlefield_gui()
 
-        cols = 4
         for index, mutation in enumerate(all_muts):
-            r = index // cols
-            c = index % cols
             card = self.create_graphic_card(grid_frame, mutation, draft_pick)
-            card.grid(row=r, column=c, padx=15, pady=15)
+            card.grid(row=index // 4, column=index % 4, padx=15, pady=15)
 
     def display_season_pass_gui(self):
-        if self.draft_frame: 
-            self.draft_frame.place_forget()
-            
+        if self.draft_frame: self.draft_frame.place_forget()
         self.pass_frame = tk.Frame(self.root, bg="#0d0d11")
         self.pass_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
         
         top_bar = tk.Frame(self.pass_frame, bg="#161623", height=70)
         top_bar.pack(fill="x", side="top")
         
-        title_lbl = tk.Label(top_bar, text="⚡ SEASON 1 BATTLE PASS ⚡", font=("Courier", 18, "bold"), fg="#00d2d3", bg="#161623")
+        ev = self.get_current_event_state()
+        is_s2_active = ev["active"] and ev["weekend"] and ev["base_multiplier"] == 10
+        
+        title_txt = "🎨 SEASON 2 BLUEPRINT ARCHITECT" if is_s2_active else "⚡ SEASON 1 BATTLE PASS ⚡"
+        title_lbl = tk.Label(top_bar, text=title_txt, font=("Courier", 18, "bold"), fg="#00d2d3", bg="#161623")
         title_lbl.pack(side="left", padx=20, pady=15)
         
         return_btn = tk.Button(top_bar, text="⬅️ RETURN TO DECK DRAFT", font=("Courier", 11, "bold"), bg="#222f3e", fg="#c8d6e5",
@@ -1008,18 +1000,15 @@ class MutationArenaApp:
         xp_container = tk.Frame(self.pass_frame, bg="#1a1a24", highlightbackground="#333344", highlightthickness=1)
         xp_container.pack(fill="x", padx=40, pady=20)
         
-        xp_status_text = f"Profile Progression Status: {self.player_xp} Total S1_XP"
+        xp_status_text = f"S2 Concept Draft Active | Profile Anchor: {self.player_xp} XP" if is_s2_active else f"Profile Progression Status: {self.player_xp} Total S1_XP"
         xp_info_lbl = tk.Label(xp_container, text=xp_status_text, font=("Courier", 13, "bold"), fg="#ffffff", bg="#1a1a24")
         xp_info_lbl.pack(anchor="w", padx=15, pady=10)
         
         bar_bg = tk.Frame(xp_container, bg="#2d2d3d", height=25)
         bar_bg.pack(fill="x", padx=15, pady=10)
         
-        max_possible_xp = 1200
-        progress_ratio = min(1.0, self.player_xp / max_possible_xp)
-        
-        progress_fill = tk.Frame(bar_bg, bg="#00d2d3", height=25)
-        progress_fill.place(relx=0, rely=0, relwidth=progress_ratio, relheight=1)
+        progress_fill = tk.Frame(bar_bg, bg="#ff9f43" if is_s2_active else "#00d2d3", height=25)
+        progress_fill.place(relx=0, rely=0, relwidth=min(1.0, self.player_xp / 1200), relheight=1)
         
         rewards_scroll_canvas = tk.Canvas(self.pass_frame, bg="#0d0d11", highlightthickness=0)
         rewards_scrollbar = tk.Scrollbar(self.pass_frame, orient="vertical", command=rewards_scroll_canvas.yview)
@@ -1032,34 +1021,32 @@ class MutationArenaApp:
         rewards_scroll_canvas.pack(side="left", fill="both", expand=True, padx=40, pady=10)
         rewards_scrollbar.pack(side="right", fill="y")
         
-        for index, item in enumerate(SEASON_PASS_REWARDS):
-            status_color = "#00d2d3" if self.player_xp >= item["xp_required"] else "#ff7675"
-            status_txt = "✔️ UNLOCKED ACCESSIBLE" if self.player_xp >= item["xp_required"] else f"🔒 LOCK REMOVAL: {item['xp_required']} XP"
+        # Load Season 1 items or prototype structural fields for Season 2 blocks
+        display_dataset = [
+            {"tier": i+1, "xp_required": (i+1)*200, "id": f"S2_PROTOTYPE_{i+1}_LTM", "desc": "Experimental Season 2 payload modification matrix."}
+            for i in range(5)
+        ] if is_s2_active else SEASON_PASS_REWARDS
+
+        for item in display_dataset:
+            unlocked = self.player_xp >= item["xp_required"]
+            status_color = "#94d2bd" if is_s2_active else ("#00d2d3" if unlocked else "#ff7675")
+            status_txt = "[S2 PROTOTYPE DESIGN]" if is_s2_active else ("✔️ UNLOCKED" if unlocked else f"🔒 LOCK: {item['xp_required']} XP")
             
             row_item = tk.Frame(rewards_grid, bg="#161623", highlightbackground="#333344", highlightthickness=1, width=820, height=80)
             row_item.pack(fill="x", pady=8, padx=5)
             row_item.pack_propagate(False)
             
-            tier_lbl = tk.Label(row_item, text=f"TIER {item['tier']}", font=("Courier", 14, "bold"), fg="#ff9f43", bg="#161623")
-            tier_lbl.pack(side="left", padx=15)
+            tk.Label(row_item, text=f"TIER {item['tier']}", font=("Courier", 14, "bold"), fg="#ff9f43", bg="#161623").pack(side="left", padx=15)
+            meta = tk.Frame(row_item, bg="#161623")
+            meta.pack(side="left", fill="both", pady=10, padx=10)
             
-            meta_container = tk.Frame(row_item, bg="#161623")
-            meta_container.pack(side="left", fill="both", pady=10, padx=10)
-            
-            item_title = tk.Label(meta_container, text=item["id"].replace("_", " "), font=("Courier", 12, "bold"), fg="#ffffff", bg="#161623")
-            item_title.pack(anchor="w")
-            
-            item_desc = tk.Label(meta_container, text=item["desc"], font=("Courier", 9), fg="#a4b0be", bg="#161623")
-            item_desc.pack(anchor="w")
-            
-            state_lbl = tk.Label(row_item, text=status_txt, font=("Courier", 11, "bold"), fg=status_color, bg="#161623")
-            state_lbl.pack(side="right", padx=20)
+            tk.Label(meta, text=item["id"].replace("_", " "), font=("Courier", 12, "bold"), fg="#ffffff", bg="#161623").pack(anchor="w")
+            tk.Label(meta, text=item["desc"], font=("Courier", 9), fg="#a4b0be", bg="#161623").pack(anchor="w")
+            tk.Label(row_item, text=status_txt, font=("Courier", 11, "bold"), fg=status_color, bg="#161623").pack(side="right", padx=20)
 
     def hide_season_pass_gui(self):
-        if self.pass_frame:
-            self.pass_frame.destroy()
-        if self.draft_frame:
-            self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        if self.pass_frame: self.pass_frame.destroy()
+        if self.draft_frame: self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
     def initialize_battlefield_gui(self):
         hud = tk.Frame(self.root, bg="#1a1a1a", height=100, highlightbackground="#333333", highlightthickness=1)
@@ -1068,10 +1055,8 @@ class MutationArenaApp:
         
         self.turn_lbl = tk.Label(hud, text="ROUND 1", font=("Courier", 18, "bold"), fg="#ffcc00", bg="#1a1a1a")
         self.turn_lbl.pack(pady=5)
-        
         self.global_rules_lbl = tk.Label(hud, text="", font=("Courier", 10), fg="#cccccc", bg="#1a1a1a")
         self.global_rules_lbl.pack()
-        
         self.rules_lbl = tk.Label(hud, text="Global Mutations: None", font=("Courier", 10, "italic"), fg="#e056fd", bg="#1a1a1a")
         self.rules_lbl.pack(pady=2)
 
@@ -1080,18 +1065,14 @@ class MutationArenaApp:
         
         self.player_panel = tk.Frame(arena_view, bg="#1e272c", highlightbackground="#2a4d69", highlightthickness=3)
         self.player_panel.pack(side="left", expand=True, fill="both", padx=20, pady=10)
-        
-        p_name = tk.Label(self.player_panel, text="OPERATOR (PLAYER)", font=("Courier", 14, "bold"), fg="#4fc3f7", bg="#1e272c")
-        p_name.pack(pady=10)
-        self.p_hp_lbl = tk.Label(self.player_panel, text="HP: 100", font=("Courier", 22, "bold"), fg="#ffffff", bg="#1e272c")
+        tk.Label(self.player_panel, text="OPERATOR (PLAYER)", font=("Courier", 14, "bold"), fg="#4fc3f7", bg="#1e272c").pack(pady=10)
+        self.p_hp_lbl = tk.Label(self.player_panel, text="HP: 150", font=("Courier", 22, "bold"), fg="#ffffff", bg="#1e272c")
         self.p_hp_lbl.pack(expand=True)
 
         self.cpu_panel = tk.Frame(arena_view, bg="#2c1e2b", highlightbackground="#4b2a4a", highlightthickness=3)
         self.cpu_panel.pack(side="right", expand=True, fill="both", padx=20, pady=10)
-        
-        c_name = tk.Label(self.cpu_panel, text="CENTRAL UNIT (CPU)", font=("Courier", 14, "bold"), fg="#f06292", bg="#2c1e2b")
-        c_name.pack(pady=10)
-        self.c_hp_lbl = tk.Label(self.cpu_panel, text="HP: 100", font=("Courier", 22, "bold"), fg="#ffffff", bg="#2c1e2b")
+        tk.Label(self.cpu_panel, text="CENTRAL UNIT (CPU)", font=("Courier", 14, "bold"), fg="#f06292", bg="#2c1e2b").pack(pady=10)
+        self.c_hp_lbl = tk.Label(self.cpu_panel, text="HP: 150", font=("Courier", 22, "bold"), fg="#ffffff", bg="#2c1e2b")
         self.c_hp_lbl.pack(expand=True)
 
         log_container = tk.Frame(self.root, bg="#1a1a1a", height=150)
@@ -1100,6 +1081,7 @@ class MutationArenaApp:
         
         self.log_box = tk.Text(log_container, bg="#0a0a0a", fg="#ffffff", font=("Courier", 10), state='disabled', wrap='word')
         self.log_box.pack(fill="both", expand=True)
+        self.init_log_tags()
 
         self.action_area = tk.Frame(self.root, bg="#1a1a1a", height=220, highlightbackground="#333333", highlightthickness=1)
         self.action_area.pack(fill="x", side="bottom", padx=20, pady=10)
@@ -1108,9 +1090,6 @@ class MutationArenaApp:
         self.update_status_displays()
         self.run_player_turn()
 
-# =====================================================================
-# SYSTEM APPLICATION ENTRY POINT ENTRY
-# =====================================================================
 if __name__ == "__main__":
     main_root = tk.Tk()
     app = MutationArenaApp(main_root)
