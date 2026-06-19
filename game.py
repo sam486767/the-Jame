@@ -22,7 +22,15 @@ MUTATION_WEIGHTS = {
     "BOMB_INSTALL": 5, "BOMB_ACCELERATE": 5, "BOMB_SLOW": 5, "ENABLE_RPS": 4,
     "INFUSE_POISON": 8, "INFUSE_BURN": 8, "INFUSE_SLEEP": 6, "INFUSE_PARALYZE": 6, "INFUSE_FREEZE": 5,
     "INFUSE_ACID": 7, "ENABLE_50_50": 2, "DEFUSE_EFFECTS": 3,
-    "PENALTY_SHOOTOUT_LTM": 3, "RED_CARD_LTM": 2
+    "PENALTY_SHOOTOUT_LTM": 3, "RED_CARD_LTM": 2,
+    
+    # NEW BONUS MUTATIONS
+    "ARMOR_PIERCE": 7,
+    "LIFE_STEAL": 6,
+    "DAMAGE_REFLECT": 5,
+    "TIME_WARP": 4,
+    "POISON_ALL": 6,
+    "HARDCORE_MODE": 3,
 }
 
 # Exclusive Season 1 Battle Pass Tier Unlocks
@@ -107,11 +115,14 @@ class MutationArenaApp:
             "crit_boost": False, "low_hp_win": False, "high_hp_win": False, "rps_mode": False,
             "infuse_poison": False, "infuse_burn": False, "infuse_sleep": False,
             "infuse_paralyze": False, "infuse_freeze": False, "infuse_acid": False, "fifty_fifty": False,
-            "overcharge": False, "nanite_shield": False, "vampire_fang": False, "eclipse": False, "singularity": False
+            "overcharge": False, "nanite_shield": False, "vampire_fang": False, "eclipse": False, "singularity": False,
+            
+            # BONUS RULES KEYS
+            "armor_pierce": False, "life_steal": False, "damage_reflect": False, "poison_all": False
         }
 
     def reset_game_state(self):
-        """Purges active combat modifications and reloads profile state for a fresh run."""
+        """Purges active combat modifications and reloads profile state for a guaranteed clean 150 HP reset."""
         self.load_xp_profile()
     
         self.bomb_timer = None
@@ -311,11 +322,13 @@ class MutationArenaApp:
         if is_ltm:
             return display_name, "#2c1a3a", "#e056fd", "#e056fd", "#431f5c"
         
-        offensive_keywords = ["DAMAGE", "GUNS", "CRIT", "STRIKE", "INFUSE"]
-        vitality_keywords = ["HP", "REGEN", "EQUALISE", "SHIELDS", "STEAL"]
-        chaos_keywords = ["BOMB", "50_50", "RPS", "SWAP", "REVERSE"]
+        offensive_keywords = ["DAMAGE", "GUNS", "CRIT", "STRIKE", "INFUSE", "PIERCE"]
+        vitality_keywords = ["HP", "REGEN", "EQUALISE", "SHIELDS", "STEAL", "LIFE"]
+        chaos_keywords = ["BOMB", "50_50", "RPS", "SWAP", "REVERSE", "REFLECT", "WARP", "POISON_ALL"]
         
-        if any(kw in mutation_key for kw in offensive_keywords):
+        if mutation_key == "HARDCORE_MODE":
+            return display_name, "#3a0000", "#ff0000", "#ff3333", "#5c0000"
+        elif any(kw in mutation_key for kw in offensive_keywords):
             return display_name, "#2d1414", "#ff4757", "#ff4757", "#4a1c1c"
         elif any(kw in mutation_key for kw in vitality_keywords):
             return display_name, "#112415", "#2ed573", "#2ed573", "#1b3d22"
@@ -511,10 +524,13 @@ class MutationArenaApp:
         self.update_status_displays()
 
     # =====================================================================
-    # COMBAT MAINPIPELINE EXECUTION CODES
+    # COMBAT MAIN PIPELINE EXECUTION CODES
     # =====================================================================
     def execute_strike(self, attacker, defender, trivia_result):
         if not self.game_active: return
+        if not self.player_panel or not self.player_panel.winfo_exists():
+            return
+            
         if self.state["rules"]["fifty_fifty"]:
             self.game_log("\n🎲 50/50 ACTIVE — PURGING ALL COIN FLIPS", "#e74c3c")
             winner = random.choice(["player", "cpu"])
@@ -549,6 +565,10 @@ class MutationArenaApp:
         damage = int(damage)
         defense = self.state["player_defense"] if defender == "player" else self.state["cpu_defense"]
         
+        # BONUS EFFECT: Armor Pierce
+        if self.state["rules"].get("armor_pierce"):
+            defense = 0
+        
         if self.state["rules"]["reverse_damage"]:
             actual_change = -damage 
             self.game_log(f"❤️ Reverse Damage active! {defender.upper()} absorbs fuel.", "#4caf50")
@@ -558,12 +578,26 @@ class MutationArenaApp:
         self.state[f"{defender}_hp"] -= actual_change
         self.game_log(f"⚔️ {attacker.upper()} strikes! Shifts balance by {actual_change} to {defender.upper()}.", "#ff7675")
         
-        # --- CRITICAL FIX IS HERE ---
         # If this hit ends the game, STOP completely. Do not roll statuses, do not trigger animations.
         if self.check_game_over():
             return
             
         self.trigger_damage_cutscene(defender, actual_change)
+        
+        # BONUS EFFECT: Life Steal
+        if self.state["rules"].get("life_steal") and actual_change > 0:
+            heal = actual_change // 2
+            self.state[f"{attacker}_hp"] += heal
+            self.game_log(f"🩸 Life Steal: {attacker.upper()} recovered {heal} HP", "#2ed573")
+            
+        # BONUS EFFECT: Damage Reflect
+        if self.state["rules"].get("damage_reflect") and actual_change > 0:
+            reflect = max(3, actual_change // 3)
+            self.state[f"{attacker}_hp"] -= reflect
+            self.game_log(f"🔄 Damage Reflect! {attacker.upper()} took {reflect} backlash damage!", "#e74c3c")
+            if self.check_game_over(): 
+                return
+
         self.apply_status_roll(defender)
         
         if self.check_game_over():
@@ -661,10 +695,15 @@ class MutationArenaApp:
         
         for actor in ["player", "cpu"]:
             s = self.state["statuses"][actor]
-            if s["poison"] > 0:
-                self.game_log(f"🍄 {actor.upper()} suffers 5 Poison breakdown damage.")
-                self.state[f"{actor}_hp"] -= 5
-                s["poison"] -= 1
+            
+            # BONUS EFFECT: Poison All checks integrated seamlessly with normal poisons
+            if s["poison"] > 0 or self.state["rules"].get("poison_all"):
+                dmg = 5 if s["poison"] > 0 else 3
+                self.game_log(f"🍄 {actor.upper()} suffers {dmg} Poison breakdown damage.")
+                self.state[f"{actor}_hp"] -= dmg
+                if s["poison"] > 0:
+                    s["poison"] -= 1
+                    
             if s["burn"] > 0:
                 self.game_log(f"🔥 {actor.upper()} suffers 3 Burn thermal damage.")
                 self.state[f"{actor}_hp"] -= 3
@@ -700,7 +739,32 @@ class MutationArenaApp:
         if not self.game_active: return
         self.game_log(f"⚡ {who.upper()} INJECTS OVERRIDE: {mutation}", "#ffcc00")
 
-        if mutation == "ENABLE_TRIVIA": self.state["rules"]["trivia"] = True
+        # === HARDCORE MODE ===
+        if mutation == "HARDCORE_MODE":
+            self.game_log("☠️ HARDCORE MODE ACTIVATED!", "#ff0000")
+            self.reset_game_state()  # Full 150 HP base layout wipe
+            self.state["player_hp"] = 15
+            self.state["cpu_hp"] = 150
+            self.clear_rules_dict()
+            self.root.after(800, lambda: self.hardcore_pick_two())
+            return
+
+        # New Normal Bonus Mutations
+        elif mutation == "ARMOR_PIERCE":
+            self.state["rules"]["armor_pierce"] = True
+        elif mutation == "LIFE_STEAL":
+            self.state["rules"]["life_steal"] = True
+        elif mutation == "DAMAGE_REFLECT":
+            self.state["rules"]["damage_reflect"] = True
+        elif mutation == "TIME_WARP":
+            self.state["turn"] += 1  # Skip next mutation phase trigger index
+            self.game_log("⏭️ Time Warp: Next mutation phase skipped!", "#9b59b6")
+        elif mutation == "POISON_ALL":
+            self.state["rules"]["poison_all"] = True
+            self.game_log("☣️ Both players will suffer poison each upkeep!", "#a9dfbf")
+
+        # Original Base Mutations
+        elif mutation == "ENABLE_TRIVIA": self.state["rules"]["trivia"] = True
         elif mutation == "ENABLE_GUNS": self.state["rules"]["guns_enabled"] = True
         elif mutation == "DISABLE_GUNS": self.state["rules"]["guns_enabled"] = False
         elif mutation == "DOUBLE_DAMAGE": self.state["rules"]["double_damage"] = True
@@ -781,6 +845,44 @@ class MutationArenaApp:
                 
         if self.check_game_over(): return
         self.update_status_displays()
+
+    def hardcore_pick_two(self):
+        """Player picks 2 mutations at start of Hardcore Mode (safely filters out baseline HP configurations)"""
+        if not self.game_active: return
+        
+        self.game_log("🛡️ HARDCORE SURVIVAL DRAFT: Choose 2 mutations to survive...", "#ff9800")
+        
+        health_mutations = {"INCREASE_PLAYER_HP", "DECREASE_PLAYER_HP", "INCREASE_CPU_HP", 
+                           "DECREASE_CPU_HP", "SWAP_HP", "STEAL_HP", "HP_EQUALISE"}
+        
+        all_options = [m for m in MUTATION_WEIGHTS.keys() if m not in health_mutations]
+        options = random.sample(all_options, min(6, len(all_options)))
+        
+        self.clear_action_space()
+        container = tk.Frame(self.action_area, bg="#121212")
+        container.pack(expand=True, fill="both")
+        
+        picked = []
+        
+        def pick(mut):
+            if mut in picked: return
+            picked.append(mut)
+            self.apply_mutation(mut, "player")
+            
+            if len(picked) == 2:
+                self.clear_action_space()
+                self.state["turn"] = 1
+                self.run_player_turn()
+            else:
+                lbl.config(text=f"Choose mutation {len(picked)+1}/2")
+        
+        lbl = tk.Label(container, text="Choose mutation 1/2", font=("Courier", 14, "bold"),
+                       fg="#ffcc00", bg="#121212")
+        lbl.pack(pady=10)
+        
+        for m in options:
+            card = self.create_graphic_card(container, m, pick)
+            card.pack(side="left", padx=10, pady=10, expand=True)
 
     def run_mutation_phase(self):
         if not self.game_active: return
