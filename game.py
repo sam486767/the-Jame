@@ -7,6 +7,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from datetime import datetime, timezone, timedelta
+import requests
 import updater
 
 # =====================================================================
@@ -107,9 +108,27 @@ class MutationArenaApp:
         self.player_xp = 0
         self.load_xp_profile()
 
+        # Vault System Sync
+        self.vaulted_cards = []
+        self._sync_vault()
+
         # Spin up Asynchronous Threading Channels safely
         threading.Thread(target=self.start_updater, daemon=True).start()
         self.check_updater_signals()
+
+    def _sync_vault(self):
+        """Synchronizes with the remote vault.json on GitHub on boot to disable specific cards."""
+        try:
+            url = f"{updater.BASE_URL}/vault.json?t={int(time.time())}"
+            r = requests.get(url, timeout=4)
+            if r.status_code == 200:
+                data = r.json()
+                self.vaulted_cards = data.get("vaulted", [])
+                print(f"[Vault] Matrix synchronized. Vaulted cards: {self.vaulted_cards}")
+            else:
+                print(f"[Vault] Remote vault not found (Status {r.status_code}), proceeding with all cards unlocked.")
+        except Exception as e:
+            print(f"[Vault] Vault synchronization failed, proceeding with local definitions. Error: {e}")
 
     def get_current_event_state(self):
         """Calculates current season countdown and figures out which weekly macro 
@@ -304,9 +323,11 @@ class MutationArenaApp:
         self.rules_lbl.config(text="Global Mutations: " + (", ".join(active_rules) if active_rules else "None"))
 
     def get_weighted_mutations(self, k):
-        population = list(MUTATION_WEIGHTS.keys())
+        # Filter out vaulted cards from the pool
+        population = [m for m in MUTATION_WEIGHTS.keys() if m not in self.vaulted_cards]
         for r in SEASON_PASS_REWARDS:
-            if self.is_reward_unlocked(r["id"]): population.append(r["id"])
+            if self.is_reward_unlocked(r["id"]) and r["id"] not in self.vaulted_cards:
+                population.append(r["id"])
 
         weights = [MUTATION_WEIGHTS.get(mut, 5) for mut in population]
         chosen = []
@@ -817,7 +838,9 @@ class MutationArenaApp:
         if not self.game_active: return
         self.game_log("🛡️ HARDCORE SURVIVAL DRAFT: Pick 2 options to build context...", "system")
         health_mutations = {"INCREASE_PLAYER_HP", "DECREASE_PLAYER_HP", "INCREASE_CPU_HP", "DECREASE_CPU_HP", "SWAP_HP", "STEAL_HP", "HP_EQUALISE"}
-        all_options = [m for m in MUTATION_WEIGHTS.keys() if m not in health_mutations]
+        
+        # Filter out vaulted cards from the hardcore draft pool
+        all_options = [m for m in MUTATION_WEIGHTS.keys() if m not in health_mutations and m not in self.vaulted_cards]
         options = random.sample(all_options, min(6, len(all_options)))
         
         self.clear_action_space()
@@ -963,7 +986,8 @@ class MutationArenaApp:
         scroll_canvas.pack(side="left", fill="both", expand=True, padx=30, pady=10)
         scrollbar.pack(side="right", fill="y")
         
-        all_muts = list(MUTATION_WEIGHTS.keys()) + [r["id"] for r in SEASON_PASS_REWARDS]
+        # Build list of mutations, ensuring we completely exclude any cards currently vaulted from the master pool
+        all_muts = [m for m in (list(MUTATION_WEIGHTS.keys()) + [r["id"] for r in SEASON_PASS_REWARDS]) if m not in self.vaulted_cards]
         
         def draft_pick(name):
             if len(self.state["player_deck"]) < 3 and name not in self.state["player_deck"]:
@@ -1094,4 +1118,4 @@ if __name__ == "__main__":
     main_root = tk.Tk()
     app = MutationArenaApp(main_root)
     app.execute_deck_draft_gui()
-    main_root.mainloop(
+    main_root.mainloop()
