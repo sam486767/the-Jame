@@ -1,5 +1,10 @@
 {
   "vaulted": [
-    "ENABLE_50_50"
+    "ENABLE_50_50",
+    "CANNON_BARRAGE_LTM",
+    "TREASURE_CHEST_LTM",
+    "PIRATE_SHIP_LTM",
+    "FLINT_KNOCK_LTM",
+    "PEG_LEG_LTM"
   ]
 }
