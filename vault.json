@@ -1,6 +1,6 @@
 {
   "vaulted_cards": [
-
+     "SWAP_HP"
   ],
   "__CARD_REGISTRY_AVAILABLE_TO_PASTE_ABOVE__": [
     "ENABLE_Guns",
@@ -14,7 +14,6 @@
     "INCREASE_CPU_HP",
     "DECREASE_PLAYER_HP",
     "DECREASE_CPU_HP",
-    "SWAP_HP",
     "STEAL_HP",
     "HP_EQUALISE",
     "INCREASE_BASE_DAMAGE",
