@@ -56,7 +56,7 @@ TRIVIA = [
 class MutationArenaApp:
     def __init__(self, root_window):
         self.root = root_window
-        self.root.title("MUTATION ARENA: CARD EDITION")
+        self.root.title("MUTATION ARENA: VAULT EDITION")
         self.root.geometry("950x750")
         self.root.configure(bg="#121212")
 
@@ -70,9 +70,12 @@ class MutationArenaApp:
         self.processing_turn = False
         self.game_active = True 
         
+        # Filter matching arrays out immediately using custom lookups
+        self.apply_card_vaulting()
+        
         # Define Static Chrono Targets (Anchor: July 13, 2026, 12 PM UTC)
         self.season_end = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)
-        self.season_start = self.season_end - timedelta(days=28) # 4-week structured block
+        self.season_start = self.season_end - timedelta(days=28)
         
         # Dynamic State Setup
         self.state = {}
@@ -111,21 +114,28 @@ class MutationArenaApp:
         threading.Thread(target=self.start_updater, daemon=True).start()
         self.check_updater_signals()
 
+    def apply_card_vaulting(self):
+        """Removes elements that are flagged inside the retrieved vault configuration list."""
+        global MUTATION_WEIGHTS, SEASON_PASS_REWARDS
+        vaulted_cards = updater.get_vault_list()
+        
+        if vaulted_cards:
+            print(f"[Vault System] Cleaning out vaulted assets: {vaulted_cards}")
+            # Wipe matches from pool weights
+            MUTATION_WEIGHTS = {k: v for k, v in MUTATION_WEIGHTS.items() if k not in vaulted_cards}
+            # Wipe matches from seasonal battlepass unlocks
+            SEASON_PASS_REWARDS = [reward for reward in SEASON_PASS_REWARDS if reward["id"] not in vaulted_cards]
+
     def get_current_event_state(self):
-        """Calculates current season countdown and figures out which weekly macro 
-        event window and weekend multiplier rules apply based on structural timelines.
-        """
         now = datetime.now(timezone.utc)
         time_remaining = self.season_end - now
         
         if time_remaining.total_seconds() <= 0:
             return {"active": False, "multiplier": 1, "label": "Season Concluded", "cd": "0d 0h", "weekend": False}
             
-        # Determine current structural week index inside the 4-week window
         days_passed = (now - self.season_start).total_seconds() / 86400
-        current_week = int(days_passed // 7) + 1  # Standardizes ranges to Weeks 1, 2, 3, or 4
+        current_week = int(days_passed // 7) + 1
         
-        # Assign structural baseline multipliers based on calendar matrix rows
         week_multipliers = {1: 3, 2: 2, 3: 1, 4: 10}
         week_labels = {
             1: "3X XP Launch Event",
@@ -137,15 +147,13 @@ class MutationArenaApp:
         target_mult = week_multipliers.get(current_week, 1)
         target_lbl = week_labels.get(current_week, "Standard Phase")
         
-        # Identify if current execution day falls inside the explicit Weekend Target Frame (Friday 12 PM UTC - Monday 12 PM UTC)
         is_weekend = False
-        current_weekday = now.weekday() # Mon=0, Tue=1 ... Fri=4, Sat=5, Sun=6
+        current_weekday = now.weekday()
         
-        # Find structural boundary timestamps for the immediate weekend
         days_until_friday = (4 - current_weekday) % 7
-        if current_weekday in [4, 5, 6, 0]: # Actively processing around weekend boundaries
+        if current_weekday in [4, 5, 6, 0]:
             if current_weekday == 0 and now.hour >= 12:
-                days_until_friday = 4 # Past Monday boundary cutoff, forward trace to next Friday
+                days_until_friday = 4
             else:
                 if current_weekday == 0: days_until_friday = -3
                 else: days_until_friday = -(current_weekday - 4)
@@ -158,7 +166,6 @@ class MutationArenaApp:
             
         final_multiplier = target_mult if is_weekend else 1
         
-        # Build out structural string countdown data formatting
         days = time_remaining.days
         hours, remainder = divmod(time_remaining.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
@@ -270,7 +277,6 @@ class MutationArenaApp:
     # REFACTORED GRAPHICAL INTERFACE AND STYLED LOG CHANNELS
     # =====================================================================
     def init_log_tags(self):
-        """Pre-allocates standard styling metrics to avoid tag memory leaking maps."""
         self.log_box.tag_config("system", foreground="#ffcc00")
         self.log_box.tag_config("combat", foreground="#ff7675")
         self.log_box.tag_config("victory", foreground="#2ecc71")
@@ -422,10 +428,10 @@ class MutationArenaApp:
 
             if p_won:
                 msg += "PLAYER WINS! Synchronizing data vectors...\n\n"
-                self.add_match_xp(120)  
+                self.add_match_xp(10)  
             else:
                 msg += "MATCH CONCLUDED.\n\n"
-                self.add_match_xp(40)   
+                self.add_match_xp(5)   
                 
             replay = messagebox.askyesno("⚡ ARENA TERMINATION ⚡", msg + "Draft a new deck and play another match?")
             if replay:
@@ -715,7 +721,7 @@ class MutationArenaApp:
             self.run_player_turn()
 
     # =====================================================================
-    # SAFE HOOK MUTATION SEQUENCER
+    # MUTATION HOOK REGISTRY
     # =====================================================================
     def apply_mutation(self, mutation, who):
         if not self.game_active: return
@@ -726,7 +732,6 @@ class MutationArenaApp:
             self.processing_turn = True
             self.clear_action_space()
             
-            # Safe reset values to prevent race conditions
             self.state["player_hp"] = 15
             self.state["cpu_hp"] = 150
             self.clear_rules_dict()
@@ -898,25 +903,20 @@ class MutationArenaApp:
             self.event_banner_lbl.config(text="📡 SEASON COMPLETE: Standby for Season 2 deployment protocols.", bg="#1a1a1a", fg="#cccccc")
             return
 
-        # Handle the 4-week calendar text layouts
         if ev["weekend"]:
             banner_text = f"🔥 BATTLE PASS EVENT LIVE: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
             self.event_banner_lbl.config(text=banner_text, bg="#3a0000", fg="#ff3333")
             
-            # Context Hook: Unlock Season 2 pass workspace designs during the Week 4 10X Finale
             if ev["base_multiplier"] == 10:
                 banner_text += " [S2 DESIGN COMPONENT ACTIVE]"
                 self.event_banner_lbl.config(text=banner_text)
         else:
-            # Weekend countdown parsing logic
             now = datetime.now(timezone.utc)
             time_until = ev["wknd_start"] - now
             hours, remainder = divmod(int(time_until.total_seconds()), 3600)
-            minutes, seconds = divmod(remainder, 60)
             
-            # Format text based on upcoming weight rewards
             upcoming_tag = f"{ev['base_multiplier']}X XP Weekend" if ev["base_multiplier"] > 1 else "Standard Event Block"
-            banner_text = f"⏳ UPCOMING WEEKEND: {upcoming_tag} starts in {time_until.days}d {hours:02d}h {minutes:02d}m | Season Timer: {ev['cd']}"
+            banner_text = f"⏳ UPCOMING WEEKEND: {upcoming_tag} starts in {time_until.days}d {hours:02d}h | Season Timer: {ev['cd']}"
             self.event_banner_lbl.config(text=banner_text, bg="#2c1a04", fg="#ffa502")
             
         self.root.after(1000, self.update_draft_banner_loop)
@@ -1021,7 +1021,6 @@ class MutationArenaApp:
         rewards_scroll_canvas.pack(side="left", fill="both", expand=True, padx=40, pady=10)
         rewards_scrollbar.pack(side="right", fill="y")
         
-        # Load Season 1 items or prototype structural fields for Season 2 blocks
         display_dataset = [
             {"tier": i+1, "xp_required": (i+1)*200, "id": f"S2_PROTOTYPE_{i+1}_LTM", "desc": "Experimental Season 2 payload modification matrix."}
             for i in range(5)
