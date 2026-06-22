@@ -16,6 +16,7 @@ GITHUB_BRANCH = "main"
 
 BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}"
 VERSION_URL = f"{BASE_URL}/version.json"
+VAULT_URL = f"{BASE_URL}/vault.json"
 
 FILES = {
     "game.py": f"{BASE_URL}/game.py",
@@ -31,6 +32,7 @@ TEMP_DIR = Path("temp_update")
 # STATE
 # =========================
 shutdown_callback = None
+cached_vault_list = []
 
 
 # =========================
@@ -59,15 +61,30 @@ def load_local_versions():
 
 
 def get_remote_versions():
-    # Cache Buster: Append a unique timestamp so GitHub cannot serve a cached file
     cache_buster_url = f"{VERSION_URL}?t={int(time.time())}"
     r = requests.get(cache_buster_url)
     r.raise_for_status()
     return r.json()
 
 
+def get_vault_list():
+    """Fetches the vault array live from GitHub without downloading it to a file."""
+    global cached_vault_list
+    if cached_vault_list:
+        return cached_vault_list
+    try:
+        print("[Updater] Checking live card vault registries from GitHub...")
+        cache_buster_url = f"{VAULT_URL}?t={int(time.time())}"
+        r = requests.get(cache_buster_url, timeout=5)
+        r.raise_for_status()
+        cached_vault_list = r.json()
+        return cached_vault_list
+    except Exception as e:
+        print(f"[Updater] Could not reach Vault manifest: {e}. Defaulting to empty vault.")
+        return []
+
+
 def download_file(url, destination):
-    # Cache Buster applied to file downloads to guarantee the freshest code gets pulled
     cache_buster_url = f"{url}?t={int(time.time())}"
     r = requests.get(cache_buster_url)
     r.raise_for_status()
@@ -213,6 +230,8 @@ def main():
     except Exception as e:
         print("[Launcher] Updater error:", e)
 
+    # Pre-fetch Vault registries right before launch so they are cached in memory
+    get_vault_list()
     cleanup()
     launch_game()
 
