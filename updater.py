@@ -68,19 +68,22 @@ def get_remote_versions():
 
 
 def get_vault_list():
-    """Fetches the vault array live from GitHub without downloading it to a file."""
+    """Fetches vault data from GitHub and extracts the vaulted_cards array."""
     global cached_vault_list
     if cached_vault_list:
         return cached_vault_list
     try:
-        print("[Updater] Checking live card vault registries from GitHub...")
+        print("[Updater] Fetching live card vault configuration from GitHub...")
         cache_buster_url = f"{VAULT_URL}?t={int(time.time())}"
         r = requests.get(cache_buster_url, timeout=5)
         r.raise_for_status()
-        cached_vault_list = r.json()
+        
+        # Method 1 extraction adjustment
+        data = r.json()
+        cached_vault_list = data.get("vaulted_cards", [])
         return cached_vault_list
     except Exception as e:
-        print(f"[Updater] Could not reach Vault manifest: {e}. Defaulting to empty vault.")
+        print(f"[Updater] Could not reach or parse Vault manifest: {e}. Defaulting to empty vault.")
         return []
 
 
@@ -230,7 +233,7 @@ def main():
     except Exception as e:
         print("[Launcher] Updater error:", e)
 
-    # Pre-fetch Vault registries right before launch so they are cached in memory
+    # Cache vault list on initial launcher sequence before dropping into game loop execution
     get_vault_list()
     cleanup()
     launch_game()
