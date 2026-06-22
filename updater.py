@@ -21,7 +21,6 @@ FILES = {
     "game.py": f"{BASE_URL}/game.py",
     "updater.py": f"{BASE_URL}/updater.py",
     "version.json": f"{BASE_URL}/version.json",
-    "vault.json": f"{BASE_URL}/vault.json",
 }
 
 VERSION_FILE = Path("version.json")
@@ -82,10 +81,7 @@ def download_updates():
 
     for filename, url in FILES.items():
         print(f"[Updater] Downloading {filename}...")
-        try:
-            download_file(url, TEMP_DIR / filename)
-        except Exception as e:
-            print(f"[Updater] Warning: Could not download {filename}: {e}")
+        download_file(url, TEMP_DIR / filename)
 
 
 def replace_game_files():
@@ -94,8 +90,6 @@ def replace_game_files():
         shutil.copy2(TEMP_DIR / "game.py", "game.py")
     if (TEMP_DIR / "version.json").exists():
         shutil.copy2(TEMP_DIR / "version.json", "version.json")
-    if (TEMP_DIR / "vault.json").exists():
-        shutil.copy2(TEMP_DIR / "vault.json", "vault.json")
 
 
 def launch_game():
@@ -127,8 +121,6 @@ if temp.exists():
         shutil.copy2(temp / "updater.py", "updater.py")
     if (temp / "version.json").exists():
         shutil.copy2(temp / "version.json", "version.json")
-    if (temp / "vault.json").exists():
-        shutil.copy2(temp / "vault.json", "vault.json")
 
     shutil.rmtree(temp)
 
