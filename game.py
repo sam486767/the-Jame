@@ -43,6 +43,24 @@ SEASON_PASS_REWARDS = [
     {"tier": 5, "xp_required": 1200, "id": "SINGULARITY_LTM", "desc": "Detonates immediate catastrophic state shifts."}
 ]
 
+SEASON_2_REWARDS = [
+    {"tier": 1, "xp_required": 500, "id": "TOKEN_1", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 2, "xp_required": 1500, "id": "TOKEN_2", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 3, "xp_required": 3000, "id": "CANNON_BARRAGE_LTM", "type": "card", "desc": "Heavy explosive damage to opponent."},
+    {"tier": 4, "xp_required": 4500, "id": "TOKEN_3", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 5, "xp_required": 6000, "id": "TOKEN_4", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 6, "xp_required": 7500, "id": "TREASURE_CHEST_LTM", "type": "card", "desc": "Huge boost to shields and HP."},
+    {"tier": 7, "xp_required": 9000, "id": "TOKEN_5", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 8, "xp_required": 10500, "id": "TOKEN_6", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 9, "xp_required": 12000, "id": "PIRATE_SHIP_LTM", "type": "card", "desc": "Commands the seas! Global damage spike."},
+    {"tier": 10, "xp_required": 14000, "id": "TOKEN_7", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 11, "xp_required": 16000, "id": "TOKEN_8", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 12, "xp_required": 17500, "id": "FLINT_KNOCK_LTM", "type": "card", "desc": "Stuns the opponent severely & deals damage."},
+    {"tier": 13, "xp_required": 18500, "id": "TOKEN_9", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 14, "xp_required": 19500, "id": "TOKEN_10", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 15, "xp_required": 20000, "id": "PEG_LEG_LTM", "type": "card", "desc": "Sacrifice leg (HP) for extreme base damage."},
+]
+
 TRIVIA = [
     {"q": "What is 2 + 2?", "a": "4"},
     {"q": "What is the capital of France?", "a": "paris"},
@@ -73,7 +91,8 @@ class MutationArenaApp:
         
         # Define Static Chrono Targets (Anchor: July 13, 2026, 12 PM UTC)
         self.season_end = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)
-        self.season_start = self.season_end - timedelta(days=28) # 4-week structured block
+        self.season_start = self.season_end - timedelta(days=28) # S1 = 4-week structured block
+        self.s2_end = self.season_end + timedelta(days=56)       # S2 = 8-week block following S1
         
         # Dynamic State Setup
         self.state = {}
@@ -100,12 +119,15 @@ class MutationArenaApp:
         self.action_area = None
         self.draft_frame = None
         self.pass_frame = None
+        self.legacy_shop_frame = None
         self.counter_lbl = None
         self.event_banner_lbl = None
 
         # Profile Execution Data Layer
         self.xp_file = "xp.json"
-        self.player_xp = 0
+        self.player_xp = 0      # S1_xp
+        self.player_s2_xp = 0   # S2_xp
+        self.tokens_spent = 0   # Track legacy tokens spent
         self.load_xp_profile()
 
         # Vault System Sync
@@ -117,7 +139,6 @@ class MutationArenaApp:
         self.check_updater_signals()
 
     def _sync_vault(self):
-        """Synchronizes with the remote vault.json on GitHub on boot to disable specific cards."""
         try:
             url = f"{updater.BASE_URL}/vault.json?t={int(time.time())}"
             r = requests.get(url, timeout=4)
@@ -131,40 +152,45 @@ class MutationArenaApp:
             print(f"[Vault] Vault synchronization failed, proceeding with local definitions. Error: {e}")
 
     def get_current_event_state(self):
-        """Calculates current season countdown and figures out which weekly macro 
-        event window and weekend multiplier rules apply based on structural timelines.
-        """
         now = datetime.now(timezone.utc)
-        time_remaining = self.season_end - now
         
-        if time_remaining.total_seconds() <= 0:
-            return {"active": False, "multiplier": 1, "label": "Season Concluded", "cd": "0d 0h", "weekend": False}
+        if now < self.season_end:
+            # SEASON 1 STATE
+            time_remaining = self.season_end - now
+            days_passed = (now - self.season_start).total_seconds() / 86400
+            current_week = int(days_passed // 7) + 1  
             
-        # Determine current structural week index inside the 4-week window
-        days_passed = (now - self.season_start).total_seconds() / 86400
-        current_week = int(days_passed // 7) + 1  # Standardizes ranges to Weeks 1, 2, 3, or 4
-        
-        # Assign structural baseline multipliers based on calendar matrix rows
-        week_multipliers = {1: 3, 2: 2, 3: 1, 4: 10}
-        week_labels = {
-            1: "3X XP Launch Event",
-            2: "2X XP Mid-Season Surge",
-            3: "Standard Operational Phase",
-            4: "10X GRAND FINALE CRASH"
-        }
-        
-        target_mult = week_multipliers.get(current_week, 1)
-        target_lbl = week_labels.get(current_week, "Standard Phase")
-        
-        # Identify if current execution day falls inside the explicit Weekend Target Frame (Friday 12 PM UTC - Monday 12 PM UTC)
+            week_multipliers = {1: 3, 2: 2, 3: 1, 4: 10}
+            week_labels = {1: "3X XP Launch Event", 2: "2X XP Mid-Season Surge", 3: "Standard Operational Phase", 4: "10X GRAND FINALE CRASH"}
+            
+            target_mult = week_multipliers.get(current_week, 1)
+            target_lbl = week_labels.get(current_week, "Standard Phase")
+            active_season = 1
+        elif now < self.s2_end:
+            # SEASON 2 STATE (8 Weeks total. Multipliers in last 4 weeks)
+            time_remaining = self.s2_end - now
+            days_passed = (now - self.season_end).total_seconds() / 86400
+            current_week = int(days_passed // 7) + 1
+            
+            if current_week <= 4:
+                target_mult = 1
+                target_lbl = "S2 Standard Phase"
+            else:
+                s2_week_map = {5: 3, 6: 2, 7: 1, 8: 10}
+                s2_lbl_map = {5: "3X XP Pirate Surge", 6: "2X XP Mid-Surge", 7: "Standard Phase", 8: "10X S2 GRAND FINALE"}
+                target_mult = s2_week_map.get(current_week, 1)
+                target_lbl = s2_lbl_map.get(current_week, "Standard Phase")
+            active_season = 2
+        else:
+            return {"active": False, "multiplier": 1, "label": "Seasons Concluded", "cd": "0d 0h", "weekend": False, "season": 0}
+
         is_weekend = False
-        current_weekday = now.weekday() # Mon=0, Tue=1 ... Fri=4, Sat=5, Sun=6
+        current_weekday = now.weekday() 
         
-        # Find structural boundary timestamps for the immediate weekend
         days_until_friday = (4 - current_weekday) % 7
-        if current_weekday in [4, 5, 6, 0]: # Actively processing around weekend boundaries
+        if current_weekday in [4, 5, 6, 0]: 
             if current_weekday == 0 and now.hour >= 12:
-                days_until_friday = 4 # Past Monday boundary cutoff, forward trace to next Friday
+                days_until_friday = 4 
             else:
                 if current_weekday == 0: days_until_friday = -3
                 else: days_until_friday = -(current_weekday - 4)
@@ -177,7 +203,6 @@ class MutationArenaApp:
             
         final_multiplier = target_mult if is_weekend else 1
         
-        # Build out structural string countdown data formatting
         days = time_remaining.days
         hours, remainder = divmod(time_remaining.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
@@ -185,6 +210,7 @@ class MutationArenaApp:
         
         return {
             "active": True,
+            "season": active_season,
             "multiplier": final_multiplier,
             "base_multiplier": target_mult,
             "label": target_lbl,
@@ -193,6 +219,13 @@ class MutationArenaApp:
             "wknd_start": wknd_start,
             "wknd_end": wknd_end
         }
+
+    def get_available_tokens(self):
+        earned = 0
+        for r in SEASON_2_REWARDS:
+            if r["type"] == "token" and self.player_s2_xp >= r["xp_required"]:
+                earned += 1
+        return max(0, earned - self.tokens_spent)
 
     def get_xp_multiplier(self):
         return self.get_current_event_state()["multiplier"]
@@ -232,33 +265,59 @@ class MutationArenaApp:
                 with open(self.xp_file, 'r') as f:
                     data = json.load(f)
                     self.player_xp = data.get("S1_xp", 0)
+                    self.player_s2_xp = data.get("S2_xp", 0)
+                    self.tokens_spent = data.get("tokens_spent", 0)
             except Exception as e:
                 print(f"[Engine] File error parsing JSON matrix: {e}. Resetting values.")
                 self.player_xp = 0
+                self.player_s2_xp = 0
+                self.tokens_spent = 0
         else:
             self.player_xp = 0  
+            self.player_s2_xp = 0
+            self.tokens_spent = 0
             self.save_xp_profile()
 
     def save_xp_profile(self):
         try:
             with open(self.xp_file, 'w') as f:
-                json.dump({"S1_xp": self.player_xp}, f, indent=4)
+                json.dump({
+                    "S1_xp": self.player_xp,
+                    "S2_xp": self.player_s2_xp,
+                    "tokens_spent": self.tokens_spent
+                }, f, indent=4)
         except Exception as e:
             print(f"[Fatal Storage Error] Could not parse save data stream: {e}")
 
     def add_match_xp(self, base_reward=120):
         ev = self.get_current_event_state()
         final_reward = base_reward * ev["multiplier"]
-        self.player_xp += final_reward
+        
+        if ev["season"] == 1:
+            self.player_xp += final_reward
+            xp_type = "S1_XP"
+            total = self.player_xp
+        elif ev["season"] == 2:
+            self.player_s2_xp += final_reward
+            xp_type = "S2_XP"
+            total = self.player_s2_xp
+        else:
+            return # Season over
+            
         self.save_xp_profile()
         
         event_tag = f" [GLOBAL {ev['multiplier']}X MULTIPLIER ACTIVE]" if ev["multiplier"] > 1 else ""
-        self.game_log(f"⭐ Data vectors merged! Received +{final_reward} S1_XP{event_tag} (Total: {self.player_xp})", "victory")
+        self.game_log(f"⭐ Data vectors merged! Received +{final_reward} {xp_type}{event_tag} (Total: {total})", "victory")
 
     def is_reward_unlocked(self, reward_id):
+        # Check S1
         for item in SEASON_PASS_REWARDS:
             if item["id"] == reward_id:
                 return self.player_xp >= item["xp_required"]
+        # Check S2
+        for item in SEASON_2_REWARDS:
+            if item["id"] == reward_id and item["type"] == "card":
+                return self.player_s2_xp >= item["xp_required"]
         return True
 
     # =====================================================================
@@ -289,7 +348,6 @@ class MutationArenaApp:
     # REFACTORED GRAPHICAL INTERFACE AND STYLED LOG CHANNELS
     # =====================================================================
     def init_log_tags(self):
-        """Pre-allocates standard styling metrics to avoid tag memory leaking maps."""
         self.log_box.tag_config("system", foreground="#ffcc00")
         self.log_box.tag_config("combat", foreground="#ff7675")
         self.log_box.tag_config("victory", foreground="#2ecc71")
@@ -323,10 +381,16 @@ class MutationArenaApp:
         self.rules_lbl.config(text="Global Mutations: " + (", ".join(active_rules) if active_rules else "None"))
 
     def get_weighted_mutations(self, k):
-        # Filter out vaulted cards from the pool
         population = [m for m in MUTATION_WEIGHTS.keys() if m not in self.vaulted_cards]
+        
+        # Add unlocked S1 cards
         for r in SEASON_PASS_REWARDS:
             if self.is_reward_unlocked(r["id"]) and r["id"] not in self.vaulted_cards:
+                population.append(r["id"])
+                
+        # Add unlocked S2 cards
+        for r in SEASON_2_REWARDS:
+            if r["type"] == "card" and self.is_reward_unlocked(r["id"]) and r["id"] not in self.vaulted_cards:
                 population.append(r["id"])
 
         weights = [MUTATION_WEIGHTS.get(mut, 5) for mut in population]
@@ -384,10 +448,16 @@ class MutationArenaApp:
 
     def get_card_design(self, mutation_key):
         display_name = mutation_key.replace("_LTM", "").replace("_", " ")
-        if mutation_key.endswith("_LTM") and any(r["id"] == mutation_key for r in SEASON_PASS_REWARDS):
+        is_s1_reward = any(r["id"] == mutation_key for r in SEASON_PASS_REWARDS)
+        is_s2_reward = any(r["id"] == mutation_key and r["type"] == "card" for r in SEASON_2_REWARDS)
+        
+        if mutation_key.endswith("_LTM") and (is_s1_reward or is_s2_reward):
             if not self.is_reward_unlocked(mutation_key):
                 return f"🔒 [LOCKED TIER]\n{display_name}", "#242424", "#555555", "#888888", "#242424"
+            if is_s2_reward:
+                return f"🏴‍☠️ {display_name}", "#0a2e13", "#2ecc71", "#2ecc71", "#11471e"
             return f"🌟 {display_name}", "#1b262c", "#00d2d3", "#00d2d3", "#223a47"
+            
         if mutation_key.endswith("_LTM"):
             return display_name, "#2c1a3a", "#e056fd", "#e056fd", "#431f5c"
         
@@ -411,7 +481,7 @@ class MutationArenaApp:
         is_locked = "🔒" in display_name
         def trigger_click(e): 
             if not is_locked: command_callback(title)
-            else: messagebox.showwarning("Access Vector Restricted", "Acquire additional S1_XP profiles to unlock.")
+            else: messagebox.showwarning("Access Vector Restricted", "Acquire additional XP profiles to unlock.")
                 
         card.bind("<Button-1>", trigger_click)
         lbl.bind("<Button-1>", trigger_click)
@@ -746,15 +816,36 @@ class MutationArenaApp:
             self.game_log("☠️ HARDCORE INTERFACES LOADED! SYSTEM ADJUSTING...", "combat")
             self.processing_turn = True
             self.clear_action_space()
-            
-            # Safe reset values to prevent race conditions
             self.state["player_hp"] = 15
             self.state["cpu_hp"] = 150
             self.clear_rules_dict()
             self.update_status_displays()
             self.root.after(800, lambda: self.hardcore_pick_two())
             return
-
+        elif mutation == "CANNON_BARRAGE_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state[f"{target}_hp"] -= 30
+            self.game_log(f"💣 CANNON FIRED! 30 damage to {target.upper()}!", "combat")
+            self.trigger_damage_cutscene(target, 30)
+        elif mutation == "TREASURE_CHEST_LTM":
+            self.state[f"{who}_hp"] += 20
+            self.state[f"{who}_defense"] += 10
+            self.game_log(f"💰 TREASURE OPENED! +20 HP, +10 Shields to {who.upper()}!", "victory")
+        elif mutation == "PIRATE_SHIP_LTM":
+            self.state["base_damage"] += 10
+            self.state[f"{who}_defense"] += 5
+            self.game_log(f"⛵ ALL ABOARD! +10 Base Damage, +5 Shields!", "system")
+        elif mutation == "FLINT_KNOCK_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state["statuses"][target]["paralyze"] = True
+            self.state[f"{target}_hp"] -= 15
+            self.game_log(f"🔫 FLINT KNOCK! {target.upper()} Paralyzed & -15 HP!", "combat")
+            self.trigger_damage_cutscene(target, 15)
+        elif mutation == "PEG_LEG_LTM":
+            self.state[f"{who}_hp"] -= 25
+            self.state["base_damage"] += 5
+            self.game_log(f"🦵 PEG LEG EQUIPPED! {who.upper()} trades 25 HP for +5 Damage!", "combat")
+            self.trigger_damage_cutscene(who, 25)
         elif mutation == "ARMOR_PIERCE": self.state["rules"]["armor_pierce"] = True
         elif mutation == "LIFE_STEAL": self.state["rules"]["life_steal"] = True
         elif mutation == "DAMAGE_REFLECT": self.state["rules"]["damage_reflect"] = True
@@ -839,7 +930,6 @@ class MutationArenaApp:
         self.game_log("🛡️ HARDCORE SURVIVAL DRAFT: Pick 2 options to build context...", "system")
         health_mutations = {"INCREASE_PLAYER_HP", "DECREASE_PLAYER_HP", "INCREASE_CPU_HP", "DECREASE_CPU_HP", "SWAP_HP", "STEAL_HP", "HP_EQUALISE"}
         
-        # Filter out vaulted cards from the hardcore draft pool
         all_options = [m for m in MUTATION_WEIGHTS.keys() if m not in health_mutations and m not in self.vaulted_cards]
         options = random.sample(all_options, min(6, len(all_options)))
         
@@ -918,26 +1008,23 @@ class MutationArenaApp:
         ev = self.get_current_event_state()
         
         if not ev["active"]:
-            self.event_banner_lbl.config(text="📡 SEASON COMPLETE: Standby for Season 2 deployment protocols.", bg="#1a1a1a", fg="#cccccc")
+            self.event_banner_lbl.config(text="📡 SEASONS COMPLETE: Standby for new deployment protocols.", bg="#1a1a1a", fg="#cccccc")
             return
 
-        # Handle the 4-week calendar text layouts
         if ev["weekend"]:
-            banner_text = f"🔥 BATTLE PASS EVENT LIVE: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
-            self.event_banner_lbl.config(text=banner_text, bg="#3a0000", fg="#ff3333")
-            
-            # Context Hook: Unlock Season 2 pass workspace designs during the Week 4 10X Finale
-            if ev["base_multiplier"] == 10:
-                banner_text += " [S2 DESIGN COMPONENT ACTIVE]"
-                self.event_banner_lbl.config(text=banner_text)
+            if ev["season"] == 1:
+                banner_text = f"🔥 BATTLE PASS EVENT LIVE: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
+                if ev["base_multiplier"] == 10: banner_text += " [S2 DESIGN COMPONENT ACTIVE]"
+                self.event_banner_lbl.config(text=banner_text, bg="#3a0000", fg="#ff3333")
+            elif ev["season"] == 2:
+                banner_text = f"🏴‍☠️ PIRATE RAID WEEKEND: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
+                self.event_banner_lbl.config(text=banner_text, bg="#0a2e13", fg="#2ecc71")
         else:
-            # Weekend countdown parsing logic
             now = datetime.now(timezone.utc)
             time_until = ev["wknd_start"] - now
             hours, remainder = divmod(int(time_until.total_seconds()), 3600)
             minutes, seconds = divmod(remainder, 60)
             
-            # Format text based on upcoming weight rewards
             upcoming_tag = f"{ev['base_multiplier']}X XP Weekend" if ev["base_multiplier"] > 1 else "Standard Event Block"
             banner_text = f"⏳ UPCOMING WEEKEND: {upcoming_tag} starts in {time_until.days}d {hours:02d}h {minutes:02d}m | Season Timer: {ev['cd']}"
             self.event_banner_lbl.config(text=banner_text, bg="#2c1a04", fg="#ffa502")
@@ -959,18 +1046,28 @@ class MutationArenaApp:
         hdr.pack(side="left", padx=20, pady=10)
         
         ev = self.get_current_event_state()
-        if ev["active"] and ev["weekend"] and ev["base_multiplier"] == 10:
-            pass_text = "🎨 DESIGN SEASON 2 PASS"
-            bg_c = "#005f73"
-            fg_c = "#94d2bd"
+        if ev["season"] == 2:
+            pass_text = "🏴‍☠️ VIEW SEASON 2 PASS"
+            bg_c = "#0a2e13"
+            fg_c = "#2ecc71"
+            
+            # Legacy Shop Button explicitly for Season 2
+            shop_btn = tk.Button(control_banner, text="🏪 LEGACY SHOP", font=("Courier", 11, "bold"), bg="#d35400", fg="#ffffff",
+                                 command=self.display_legacy_shop_gui)
+            shop_btn.pack(side="right", padx=10, pady=15)
         else:
-            pass_text = "👾 VIEW SEASON PASS"
-            bg_c = "#431f5c"
-            fg_c = "#e056fd"
+            if ev["active"] and ev["weekend"] and ev["base_multiplier"] == 10:
+                pass_text = "🎨 DESIGN SEASON 2 PASS"
+                bg_c = "#005f73"
+                fg_c = "#94d2bd"
+            else:
+                pass_text = "👾 VIEW SEASON PASS"
+                bg_c = "#431f5c"
+                fg_c = "#e056fd"
 
         pass_btn = tk.Button(control_banner, text=pass_text, font=("Courier", 11, "bold"), bg=bg_c, fg=fg_c,
                              command=self.display_season_pass_gui)
-        pass_btn.pack(side="right", padx=20, pady=15)
+        pass_btn.pack(side="right", padx=10, pady=15)
         
         self.counter_lbl = tk.Label(self.draft_frame, text=f"Selected Requirements: {len(self.state['player_deck'])} / 3", font=("Courier", 13), fg="#ffffff", bg="#121212")
         self.counter_lbl.pack(pady=10)
@@ -986,8 +1083,11 @@ class MutationArenaApp:
         scroll_canvas.pack(side="left", fill="both", expand=True, padx=30, pady=10)
         scrollbar.pack(side="right", fill="y")
         
-        # Build list of mutations, ensuring we completely exclude any cards currently vaulted from the master pool
-        all_muts = [m for m in (list(MUTATION_WEIGHTS.keys()) + [r["id"] for r in SEASON_PASS_REWARDS]) if m not in self.vaulted_cards]
+        # Build list of mutations, maintaining S1 and only S2 CARD rewards
+        s2_cards = [r["id"] for r in SEASON_2_REWARDS if r["type"] == "card"]
+        s1_cards = [r["id"] for r in SEASON_PASS_REWARDS]
+        all_muts = list(MUTATION_WEIGHTS.keys()) + s1_cards + s2_cards
+        all_muts = [m for m in all_muts if m not in self.vaulted_cards]
         
         def draft_pick(name):
             if len(self.state["player_deck"]) < 3 and name not in self.state["player_deck"]:
@@ -996,11 +1096,70 @@ class MutationArenaApp:
                 if len(self.state["player_deck"]) == 3:
                     self.draft_frame.destroy()
                     if self.pass_frame: self.pass_frame.destroy()
+                    if self.legacy_shop_frame: self.legacy_shop_frame.destroy()
                     self.initialize_battlefield_gui()
 
         for index, mutation in enumerate(all_muts):
             card = self.create_graphic_card(grid_frame, mutation, draft_pick)
             card.grid(row=index // 4, column=index % 4, padx=15, pady=15)
+
+    def display_legacy_shop_gui(self):
+        if self.draft_frame: self.draft_frame.place_forget()
+        if self.pass_frame: self.pass_frame.destroy()
+        
+        self.legacy_shop_frame = tk.Frame(self.root, bg="#1e1e1e")
+        self.legacy_shop_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        
+        top_bar = tk.Frame(self.legacy_shop_frame, bg="#2d3436", height=70)
+        top_bar.pack(fill="x", side="top")
+        
+        tk.Label(top_bar, text="🏪 LEGACY BLACK MARKET 🏪", font=("Courier", 18, "bold"), fg="#d35400", bg="#2d3436").pack(side="left", padx=20, pady=15)
+        
+        return_btn = tk.Button(top_bar, text="⬅️ RETURN TO DECK DRAFT", font=("Courier", 11, "bold"), bg="#636e72", fg="#ffffff",
+                               command=self.hide_legacy_shop_gui)
+        return_btn.pack(side="right", padx=20, pady=15)
+        
+        token_lbl = tk.Label(self.legacy_shop_frame, text=f"Available Legacy Tokens: {self.get_available_tokens()}", font=("Courier", 14, "bold"), fg="#2ecc71", bg="#1e1e1e")
+        token_lbl.pack(pady=20)
+        
+        shop_grid = tk.Frame(self.legacy_shop_frame, bg="#1e1e1e")
+        shop_grid.pack(expand=True, fill="both", padx=40)
+        
+        def attempt_purchase(tier_req, reward_id):
+            if self.get_available_tokens() >= 3:
+                self.player_xp = tier_req
+                self.tokens_spent += 3
+                self.save_xp_profile()
+                messagebox.showinfo("PURCHASE SUCCESS", f"Unlocked {reward_id} for 3 Tokens!")
+                self.display_legacy_shop_gui()
+            else:
+                messagebox.showerror("INSUFFICIENT TOKENS", "You need 3 Legacy Tokens to unlock this item.")
+                
+        # Find next un-unlocked S1 item
+        target_item = None
+        for item in SEASON_PASS_REWARDS:
+            if self.player_xp < item["xp_required"]:
+                target_item = item
+                break
+                
+        if target_item:
+            card = tk.Frame(shop_grid, bg="#2c1a3a", highlightbackground="#e056fd", highlightthickness=3, width=300, height=350)
+            card.pack(pady=40)
+            card.pack_propagate(False)
+            
+            tk.Label(card, text="NEXT S1 LEGACY UNLOCK", font=("Courier", 12, "bold"), fg="#ffffff", bg="#2c1a3a").pack(pady=10)
+            tk.Label(card, text=target_item["id"].replace("_", " "), font=("Courier", 16, "bold"), fg="#e056fd", bg="#2c1a3a", wraplength=280).pack(pady=20)
+            tk.Label(card, text=target_item["desc"], font=("Courier", 10), fg="#cccccc", bg="#2c1a3a", wraplength=280).pack(pady=10)
+            
+            btn = tk.Button(card, text="UNLOCK (COST: 3 TOKENS)", font=("Courier", 12, "bold"), bg="#d35400", fg="#ffffff",
+                            command=lambda: attempt_purchase(target_item["xp_required"], target_item["id"]))
+            btn.pack(side="bottom", pady=20)
+        else:
+            tk.Label(shop_grid, text="ALL LEGACY ITEMS UNLOCKED!", font=("Courier", 20, "bold"), fg="#f1c40f", bg="#1e1e1e").pack(pady=100)
+
+    def hide_legacy_shop_gui(self):
+        if self.legacy_shop_frame: self.legacy_shop_frame.destroy()
+        if self.draft_frame: self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
     def display_season_pass_gui(self):
         if self.draft_frame: self.draft_frame.place_forget()
@@ -1011,32 +1170,49 @@ class MutationArenaApp:
         top_bar.pack(fill="x", side="top")
         
         ev = self.get_current_event_state()
-        is_s2_active = ev["active"] and ev["weekend"] and ev["base_multiplier"] == 10
+        is_s1_prototype = ev["active"] and ev["season"] == 1 and ev["weekend"] and ev["base_multiplier"] == 10
+        is_s2 = ev["season"] == 2
         
-        title_txt = "🎨 SEASON 2 BLUEPRINT ARCHITECT" if is_s2_active else "⚡ SEASON 1 BATTLE PASS ⚡"
-        title_lbl = tk.Label(top_bar, text=title_txt, font=("Courier", 18, "bold"), fg="#00d2d3", bg="#161623")
+        if is_s2:
+            top_bar.config(bg="#0a2e13")
+            self.pass_frame.config(bg="#051408")
+            title_txt = "🏴‍☠️ SEASON 2: PIRATE'S PLUNDER 🏴‍☠️"
+            title_color = "#2ecc71"
+        else:
+            title_txt = "🎨 SEASON 2 BLUEPRINT ARCHITECT" if is_s1_prototype else "⚡ SEASON 1 BATTLE PASS ⚡"
+            title_color = "#00d2d3"
+            
+        title_lbl = tk.Label(top_bar, text=title_txt, font=("Courier", 18, "bold"), fg=title_color, bg=top_bar.cget("bg"))
         title_lbl.pack(side="left", padx=20, pady=15)
         
         return_btn = tk.Button(top_bar, text="⬅️ RETURN TO DECK DRAFT", font=("Courier", 11, "bold"), bg="#222f3e", fg="#c8d6e5",
                                command=self.hide_season_pass_gui)
         return_btn.pack(side="right", padx=20, pady=15)
         
-        xp_container = tk.Frame(self.pass_frame, bg="#1a1a24", highlightbackground="#333344", highlightthickness=1)
+        xp_container = tk.Frame(self.pass_frame, bg="#1a1a24" if not is_s2 else "#0b1f10", highlightbackground="#333344", highlightthickness=1)
         xp_container.pack(fill="x", padx=40, pady=20)
         
-        xp_status_text = f"S2 Concept Draft Active | Profile Anchor: {self.player_xp} XP" if is_s2_active else f"Profile Progression Status: {self.player_xp} Total S1_XP"
-        xp_info_lbl = tk.Label(xp_container, text=xp_status_text, font=("Courier", 13, "bold"), fg="#ffffff", bg="#1a1a24")
+        if is_s2:
+            xp_status_text = f"S2 Plunder Progress: {self.player_s2_xp} S2_XP | Legacy Tokens: {self.get_available_tokens()}"
+            progress_ratio = min(1.0, self.player_s2_xp / 20000)
+            fill_color = "#2ecc71"
+        else:
+            xp_status_text = f"S2 Concept Draft Active | Profile Anchor: {self.player_xp} XP" if is_s1_prototype else f"Profile Progression Status: {self.player_xp} Total S1_XP"
+            progress_ratio = min(1.0, self.player_xp / 1200)
+            fill_color = "#ff9f43" if is_s1_prototype else "#00d2d3"
+            
+        xp_info_lbl = tk.Label(xp_container, text=xp_status_text, font=("Courier", 13, "bold"), fg="#ffffff", bg=xp_container.cget("bg"))
         xp_info_lbl.pack(anchor="w", padx=15, pady=10)
         
-        bar_bg = tk.Frame(xp_container, bg="#2d2d3d", height=25)
+        bar_bg = tk.Frame(xp_container, bg="#2d2d3d" if not is_s2 else "#17361e", height=25)
         bar_bg.pack(fill="x", padx=15, pady=10)
         
-        progress_fill = tk.Frame(bar_bg, bg="#ff9f43" if is_s2_active else "#00d2d3", height=25)
-        progress_fill.place(relx=0, rely=0, relwidth=min(1.0, self.player_xp / 1200), relheight=1)
+        progress_fill = tk.Frame(bar_bg, bg=fill_color, height=25)
+        progress_fill.place(relx=0, rely=0, relwidth=progress_ratio, relheight=1)
         
-        rewards_scroll_canvas = tk.Canvas(self.pass_frame, bg="#0d0d11", highlightthickness=0)
+        rewards_scroll_canvas = tk.Canvas(self.pass_frame, bg=self.pass_frame.cget("bg"), highlightthickness=0)
         rewards_scrollbar = tk.Scrollbar(self.pass_frame, orient="vertical", command=rewards_scroll_canvas.yview)
-        rewards_grid = tk.Frame(rewards_scroll_canvas, bg="#0d0d11")
+        rewards_grid = tk.Frame(rewards_scroll_canvas, bg=self.pass_frame.cget("bg"))
         
         rewards_grid.bind("<Configure>", lambda e: rewards_scroll_canvas.configure(scrollregion=rewards_scroll_canvas.bbox("all")))
         rewards_scroll_canvas.create_window((0, 0), window=rewards_grid, anchor="nw")
@@ -1045,28 +1221,39 @@ class MutationArenaApp:
         rewards_scroll_canvas.pack(side="left", fill="both", expand=True, padx=40, pady=10)
         rewards_scrollbar.pack(side="right", fill="y")
         
-        # Load Season 1 items or prototype structural fields for Season 2 blocks
-        display_dataset = [
-            {"tier": i+1, "xp_required": (i+1)*200, "id": f"S2_PROTOTYPE_{i+1}_LTM", "desc": "Experimental Season 2 payload modification matrix."}
-            for i in range(5)
-        ] if is_s2_active else SEASON_PASS_REWARDS
+        if is_s2:
+            display_dataset = SEASON_2_REWARDS
+        elif is_s1_prototype:
+            display_dataset = [
+                {"tier": i+1, "xp_required": (i+1)*200, "id": f"S2_PROTOTYPE_{i+1}_LTM", "desc": "Experimental Season 2 payload modification matrix."}
+                for i in range(5)
+            ]
+        else:
+            display_dataset = SEASON_PASS_REWARDS
 
         for item in display_dataset:
-            unlocked = self.player_xp >= item["xp_required"]
-            status_color = "#94d2bd" if is_s2_active else ("#00d2d3" if unlocked else "#ff7675")
-            status_txt = "[S2 PROTOTYPE DESIGN]" if is_s2_active else ("✔️ UNLOCKED" if unlocked else f"🔒 LOCK: {item['xp_required']} XP")
+            if is_s2:
+                unlocked = self.player_s2_xp >= item["xp_required"]
+                status_color = "#2ecc71" if unlocked else "#e74c3c"
+                status_txt = "✔️ UNLOCKED" if unlocked else f"🔒 LOCK: {item['xp_required']} XP"
+            else:
+                unlocked = self.player_xp >= item["xp_required"]
+                status_color = "#94d2bd" if is_s1_prototype else ("#00d2d3" if unlocked else "#ff7675")
+                status_txt = "[S2 PROTOTYPE DESIGN]" if is_s1_prototype else ("✔️ UNLOCKED" if unlocked else f"🔒 LOCK: {item['xp_required']} XP")
             
-            row_item = tk.Frame(rewards_grid, bg="#161623", highlightbackground="#333344", highlightthickness=1, width=820, height=80)
+            row_item = tk.Frame(rewards_grid, bg="#161623" if not is_s2 else "#0b1f10", highlightbackground="#333344" if not is_s2 else "#17361e", highlightthickness=1, width=820, height=80)
             row_item.pack(fill="x", pady=8, padx=5)
             row_item.pack_propagate(False)
             
-            tk.Label(row_item, text=f"TIER {item['tier']}", font=("Courier", 14, "bold"), fg="#ff9f43", bg="#161623").pack(side="left", padx=15)
-            meta = tk.Frame(row_item, bg="#161623")
+            tier_color = "#ff9f43" if not is_s2 else "#f1c40f"
+            tk.Label(row_item, text=f"TIER {item['tier']}", font=("Courier", 14, "bold"), fg=tier_color, bg=row_item.cget("bg")).pack(side="left", padx=15)
+            meta = tk.Frame(row_item, bg=row_item.cget("bg"))
             meta.pack(side="left", fill="both", pady=10, padx=10)
             
-            tk.Label(meta, text=item["id"].replace("_", " "), font=("Courier", 12, "bold"), fg="#ffffff", bg="#161623").pack(anchor="w")
-            tk.Label(meta, text=item["desc"], font=("Courier", 9), fg="#a4b0be", bg="#161623").pack(anchor="w")
-            tk.Label(row_item, text=status_txt, font=("Courier", 11, "bold"), fg=status_color, bg="#161623").pack(side="right", padx=20)
+            item_display_name = item["id"].replace("_", " ") if "id" in item else "TOKEN"
+            tk.Label(meta, text=item_display_name, font=("Courier", 12, "bold"), fg="#ffffff", bg=meta.cget("bg")).pack(anchor="w")
+            tk.Label(meta, text=item.get("desc", ""), font=("Courier", 9), fg="#a4b0be", bg=meta.cget("bg")).pack(anchor="w")
+            tk.Label(row_item, text=status_txt, font=("Courier", 11, "bold"), fg=status_color, bg=row_item.cget("bg")).pack(side="right", padx=20)
 
     def hide_season_pass_gui(self):
         if self.pass_frame: self.pass_frame.destroy()
