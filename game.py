@@ -24,7 +24,7 @@ MUTATION_WEIGHTS = {
     "BOMB_INSTALL": 5, "BOMB_ACCELERATE": 5, "BOMB_SLOW": 5, "ENABLE_RPS": 4,
     "INFUSE_POISON": 8, "INFUSE_BURN": 8, "INFUSE_SLEEP": 6, "INFUSE_PARALYZE": 6, "INFUSE_FREEZE": 5,
     "INFUSE_ACID": 7, "ENABLE_50_50": 2, "DEFUSE_EFFECTS": 3,
-    "PENALTY_SHOOTOUT_LTM": 3, "RED_CARD_LTM": 2,
+    "PENALTY_SHOOTOUT_LTM": 3, "RED_CARD_LTM": 2, "ELECTION_BONANZA_LTM": 5,
     
     # BONUS MUTATIONS
     "ARMOR_PIERCE": 7,
@@ -908,6 +908,27 @@ class MutationArenaApp:
                 if "infuse" in k: self.state["rules"][k] = False
         elif mutation == "PENALTY_SHOOTOUT_LTM":
             self.play_penalty_shootout(who, "cpu" if who == "player" else "player")
+        elif mutation == "ELECTION_BONANZA_LTM":
+            # Generate a random multiple of 5 between 0 and 100 for your votes
+            your_votes = random.choice([i for i in range(0, 101, 5)])
+            opponent_votes = 100 - your_votes
+            
+            # Opponent takes damage scaled by your vote percentage, you take damage scaled by theirs
+            opp_damage = int(20 * (your_votes / 100))
+            your_damage = int(20 * (opponent_votes / 100))
+            
+            target = "cpu" if who == "player" else "player"
+            
+            self.state[f"{who}_hp"] -= your_damage
+            self.state[f"{target}_hp"] -= opp_damage
+            
+            self.game_log(f"🗳️ ELECTION SEATS ALLOCATED! {who.upper()} won {your_votes}% of the vote.", "system")
+            if your_damage > 0:
+                self.game_log(f"💥 Backlash! {who.upper()} takes {your_damage} damage.", "combat")
+                self.trigger_damage_cutscene(who, your_damage)
+            if opp_damage > 0:
+                self.game_log(f"💥 Landslide! {target.upper()} takes {opp_damage} damage.", "combat")
+                self.trigger_damage_cutscene(target, opp_damage)
         elif mutation == "RED_CARD_LTM":
             target = "cpu" if who == "player" else "player"
             self.state["statuses"][target]["sleep"] = 2
