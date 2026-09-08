@@ -92,7 +92,7 @@ class MutationArenaApp:
         # Define Static Chrono Targets (Anchor: July 13, 2026, 12 PM UTC)
         self.season_end = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)
         self.season_start = self.season_end - timedelta(days=28) # S1 = 4-week structured block
-        self.s2_end = self.season_end + timedelta(days=64)       # S2 = 8-week block following S1
+        self.s2_end = self.season_end + timedelta(days=63)       # S2 = 8-week block following S1
         
         # Dynamic State Setup
         self.state = {}
