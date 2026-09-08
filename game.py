@@ -92,7 +92,7 @@ class MutationArenaApp:
         # Define Static Chrono Targets (Anchor: July 13, 2026, 12 PM UTC)
         self.season_end = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)
         self.season_start = self.season_end - timedelta(days=28) # S1 = 4-week structured block
-        self.s2_end = self.season_end + timedelta(days=56)       # S2 = 8-week block following S1
+        self.s2_end = self.season_end + timedelta(days=64)       # S2 = 8-week block following S1
         
         # Dynamic State Setup
         self.state = {}
@@ -176,8 +176,8 @@ class MutationArenaApp:
                 target_mult = 1
                 target_lbl = "S2 Standard Phase"
             else:
-                s2_week_map = {5: 3, 6: 2, 7: 1, 8: 10}
-                s2_lbl_map = {5: "3X XP Pirate Surge", 6: "2X XP Mid-Surge", 7: "Standard Phase", 8: "10X S2 GRAND FINALE"}
+                s2_week_map = {5: 3, 6: 2, 7: 1, 8: 10, 9: 4}
+                s2_lbl_map = {5: "3X XP Pirate Surge", 6: "2X XP Mid-Surge", 7: "Standard Phase", 8: "10X S2 GRAND FINALE", 9: "4X Bonus Event"}
                 target_mult = s2_week_map.get(current_week, 1)
                 target_lbl = s2_lbl_map.get(current_week, "Standard Phase")
             active_season = 2
