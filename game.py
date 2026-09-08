@@ -35,7 +35,8 @@ MUTATION_WEIGHTS = {
     "HARDCORE_MODE": 3,
 }
 
-SEASON_PASS_REWARDS = [
+# Legacy Vault Content (Former S1 Pass Rewards - now purchasable via Legacy Shop)
+S1_LEGACY_REWARDS = [
     {"tier": 1, "xp_required": 100, "id": "OVERCHARGE_LTM", "desc": "Instantly shifts Base Damage significantly."},
     {"tier": 2, "xp_required": 250, "id": "NANITE_SHIELD_LTM", "desc": "Generates persistent mechanical defenses."},
     {"tier": 3, "xp_required": 500, "id": "VAMPIRE_FANG_LTM", "desc": "Drains HP from your opponent directly."},
@@ -60,6 +61,78 @@ SEASON_2_REWARDS = [
     {"tier": 14, "xp_required": 19500, "id": "TOKEN_10", "type": "token", "desc": "Grants 1 Legacy Token."},
     {"tier": 15, "xp_required": 20000, "id": "PEG_LEG_LTM", "type": "card", "desc": "Sacrifice leg (HP) for extreme base damage."},
 ]
+
+SEASON_3_REWARDS = [
+    {"tier": 1, "xp_required": 500, "id": "TOKEN_S3_1", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 2, "xp_required": 1500, "id": "TOKEN_S3_2", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 3, "xp_required": 3000, "id": "INFERNO_BLAST_LTM", "type": "card", "desc": "Burns target and deals thermal damage."},
+    {"tier": 4, "xp_required": 4500, "id": "TOKEN_S3_3", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 5, "xp_required": 6000, "id": "TOKEN_S3_4", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 6, "xp_required": 7500, "id": "MAGMA_SHIELD_LTM", "type": "card", "desc": "Grants heavy shields and burns attackers."},
+    {"tier": 7, "xp_required": 9000, "id": "TOKEN_S3_5", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 8, "xp_required": 10500, "id": "TOKEN_S3_6", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 9, "xp_required": 12000, "id": "VOLCANIC_ERUPTION_LTM", "type": "card", "desc": "Massive damage spike to both players."},
+    {"tier": 10, "xp_required": 14000, "id": "TOKEN_S3_7", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 11, "xp_required": 16000, "id": "TOKEN_S3_8", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 12, "xp_required": 17500, "id": "SOLAR_FLARE_LTM", "type": "card", "desc": "Blinds CPU and sets base damage high."},
+    {"tier": 13, "xp_required": 18500, "id": "TOKEN_S3_9", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 14, "xp_required": 19500, "id": "TOKEN_S3_10", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 15, "xp_required": 20000, "id": "METEOR_STRIKE_LTM", "type": "card", "desc": "Devastating lethal strike payload."},
+]
+
+SEASON_4_REWARDS = [
+    {"tier": 1, "xp_required": 500, "id": "TOKEN_S4_1", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 2, "xp_required": 1500, "id": "TOKEN_S4_2", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 3, "xp_required": 3000, "id": "ZERO_KELVIN_LTM", "type": "card", "desc": "Freezes target for 2 turns."},
+    {"tier": 4, "xp_required": 4500, "id": "TOKEN_S4_3", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 5, "xp_required": 6000, "id": "TOKEN_S4_4", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 6, "xp_required": 7500, "id": "ICE_BARRIER_LTM", "type": "card", "desc": "Absorbs incoming attacks completely once."},
+    {"tier": 7, "xp_required": 9000, "id": "TOKEN_S4_5", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 8, "xp_required": 10500, "id": "TOKEN_S4_6", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 9, "xp_required": 12000, "id": "BLIZZARD_STORM_LTM", "type": "card", "desc": "Slows game tempo and drains HP."},
+    {"tier": 10, "xp_required": 14000, "id": "TOKEN_S4_7", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 11, "xp_required": 16000, "id": "TOKEN_S4_8", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 12, "xp_required": 17500, "id": "FROSTBITE_LTM", "type": "card", "desc": "Permanent damage reduction to enemy."},
+    {"tier": 13, "xp_required": 18500, "id": "TOKEN_S4_9", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 14, "xp_required": 19500, "id": "TOKEN_S4_10", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 15, "xp_required": 20000, "id": "ABSOLUTE_ZERO_LTM", "type": "card", "desc": "Wipes enemy shields and freezes."},
+]
+
+SEASON_5_REWARDS = [
+    {"tier": 1, "xp_required": 500, "id": "TOKEN_S5_1", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 2, "xp_required": 1500, "id": "TOKEN_S5_2", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 3, "xp_required": 3000, "id": "COSMIC_BEAM_LTM", "type": "card", "desc": "Pierces all defenses dealing pure damage."},
+    {"tier": 4, "xp_required": 4500, "id": "TOKEN_S5_3", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 5, "xp_required": 6000, "id": "TOKEN_S5_4", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 6, "xp_required": 7500, "id": "GRAVITY_WELL_LTM", "type": "card", "desc": "Traps enemy turn and restores HP."},
+    {"tier": 7, "xp_required": 9000, "id": "TOKEN_S5_5", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 8, "xp_required": 10500, "id": "TOKEN_S5_6", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 9, "xp_required": 12000, "id": "SUPERNOVA_LTM", "type": "card", "desc": "Extreme random damage blast."},
+    {"tier": 10, "xp_required": 14000, "id": "TOKEN_S5_7", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 11, "xp_required": 16000, "id": "TOKEN_S5_8", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 12, "xp_required": 17500, "id": "CHRONO_DISRUPTION_LTM", "type": "card", "desc": "Resets round counter & grants double strike."},
+    {"tier": 13, "xp_required": 18500, "id": "TOKEN_S5_9", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 14, "xp_required": 19500, "id": "TOKEN_S5_10", "type": "token", "desc": "Grants 1 Legacy Token."},
+    {"tier": 15, "xp_required": 20000, "id": "EVENT_HORIZON_LTM", "type": "card", "desc": "Swaps HP states and grants shields."},
+]
+
+MINI_SEASON_REWARDS = [
+    {"tier": 1, "xp_required": 500, "id": "TOKEN_MINI_1", "type": "token", "desc": "Grants 3 Legacy Tokens!"},
+    {"tier": 2, "xp_required": 1500, "id": "TOKEN_MINI_2", "type": "token", "desc": "Grants 3 Legacy Tokens!"},
+    {"tier": 3, "xp_required": 3000, "id": "TOKEN_MINI_3", "type": "token", "desc": "Grants 3 Legacy Tokens!"},
+    {"tier": 4, "xp_required": 5000, "id": "TOKEN_MINI_4", "type": "token", "desc": "Grants 3 Legacy Tokens!"},
+    {"tier": 5, "xp_required": 8000, "id": "HYPER_DRIVE_LTM", "type": "card", "desc": "Ultimate Blitz: Triples attack & heals user."},
+]
+
+# Lookup of every seasonal reward table, keyed by season number (1 = Legacy Vault)
+SEASON_CARD_TABLES = {
+    1: S1_LEGACY_REWARDS,
+    2: SEASON_2_REWARDS,
+    3: SEASON_3_REWARDS,
+    4: SEASON_4_REWARDS,
+    5: SEASON_5_REWARDS,
+    6: MINI_SEASON_REWARDS,
+}
 
 TRIVIA = [
     {"q": "What is 2 + 2?", "a": "4"},
@@ -89,10 +162,15 @@ class MutationArenaApp:
         self.processing_turn = False
         self.game_active = True 
         
-        # Define Static Chrono Targets (Anchor: July 13, 2026, 12 PM UTC)
+        # Define Static Chrono Targets (Anchor: July 13, 2026, 12 PM UTC — S1 concluded here)
         self.season_end = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)
-        self.season_start = self.season_end - timedelta(days=28) # S1 = 4-week structured block
-        self.s2_end = self.season_end + timedelta(days=63)       # S2 = 8-week block following S1
+
+        # Extended Season Timeline Mapping (S1 is now Legacy Vault content only)
+        self.s2_end = self.season_end + timedelta(days=63)   # S2: 9 weeks (8 + 1 ext)
+        self.s3_end = self.s2_end + timedelta(days=56)       # S3: 8 weeks
+        self.s4_end = self.s3_end + timedelta(days=56)       # S4: 8 weeks
+        self.s5_end = self.s4_end + timedelta(days=56)       # S5: 8 weeks
+        self.mini_end = self.s5_end + timedelta(days=21)     # Mini: 3 weeks
         
         # Dynamic State Setup
         self.state = {}
@@ -125,9 +203,14 @@ class MutationArenaApp:
 
         # Profile Execution Data Layer
         self.xp_file = "xp.json"
-        self.player_xp = 0      # S1_xp
-        self.player_s2_xp = 0   # S2_xp
-        self.tokens_spent = 0   # Track legacy tokens spent
+        self.player_xp = 0        # Legacy / S1_xp
+        self.player_s2_xp = 0     # S2_xp
+        self.player_s3_xp = 0     # S3_xp
+        self.player_s4_xp = 0     # S4_xp
+        self.player_s5_xp = 0     # S5_xp
+        self.player_mini_xp = 0   # Mini_xp
+        self.tokens_spent = 0     # Track legacy tokens spent
+        self.unlocked_legacy_cards = []  # S1 Legacy Vault items purchased with tokens
         self.load_xp_profile()
 
         # Vault System Sync
@@ -153,79 +236,102 @@ class MutationArenaApp:
 
     def get_current_event_state(self):
         now = datetime.now(timezone.utc)
-        
-        if now < self.season_end:
-            # SEASON 1 STATE
-            time_remaining = self.season_end - now
-            days_passed = (now - self.season_start).total_seconds() / 86400
-            current_week = int(days_passed // 7) + 1  
-            
-            week_multipliers = {1: 3, 2: 2, 3: 1, 4: 10}
-            week_labels = {1: "3X XP Launch Event", 2: "2X XP Mid-Season Surge", 3: "Standard Operational Phase", 4: "10X GRAND FINALE CRASH"}
-            
-            target_mult = week_multipliers.get(current_week, 1)
-            target_lbl = week_labels.get(current_week, "Standard Phase")
-            active_season = 1
-        elif now < self.s2_end:
-            # SEASON 2 STATE (8 Weeks total. Multipliers in last 4 weeks)
-            time_remaining = self.s2_end - now
-            days_passed = (now - self.season_end).total_seconds() / 86400
-            current_week = int(days_passed // 7) + 1
-            
-            if current_week <= 4:
-                target_mult = 1
-                target_lbl = "S2 Standard Phase"
-            else:
-                s2_week_map = {5: 3, 6: 2, 7: 1, 8: 10, 9: 4}
-                s2_lbl_map = {5: "3X XP Pirate Surge", 6: "2X XP Mid-Surge", 7: "Standard Phase", 8: "10X S2 GRAND FINALE", 9: "4X Bonus Event"}
-                target_mult = s2_week_map.get(current_week, 1)
-                target_lbl = s2_lbl_map.get(current_week, "Standard Phase")
-            active_season = 2
-        else:
-            return {"active": False, "multiplier": 1, "label": "Seasons Concluded", "cd": "0d 0h", "weekend": False, "season": 0}
 
-        is_weekend = False
-        current_weekday = now.weekday() 
-        
-        days_until_friday = (4 - current_weekday) % 7
-        if current_weekday in [4, 5, 6, 0]: 
-            if current_weekday == 0 and now.hour >= 12:
-                days_until_friday = 4 
+        if now < self.s2_end:
+            active_season = 2
+            time_remaining = self.s2_end - now
+            current_week = int(((now - self.season_end).total_seconds() / 86400) // 7) + 1
+            if current_week <= 5:
+                target_mult, target_lbl = 1, "S2 Standard Phase"
             else:
-                if current_weekday == 0: days_until_friday = -3
-                else: days_until_friday = -(current_weekday - 4)
-                
+                s2_map = {6: (3, "3X XP Surge"), 7: (2, "2X XP Mid-Surge"), 8: (1, "Standard Phase"), 9: (10, "10X GRAND FINALE")}
+                target_mult, target_lbl = s2_map.get(current_week, (1, "Standard Phase"))
+
+        elif now < self.s3_end:
+            active_season = 3
+            time_remaining = self.s3_end - now
+            current_week = int(((now - self.s2_end).total_seconds() / 86400) // 7) + 1
+            if current_week <= 4:
+                target_mult, target_lbl = 1, "S3 Volcanic Phase"
+            else:
+                s3_map = {5: (3, "3X Inferno Surge"), 6: (2, "2X Flame Surge"), 7: (1, "Standard Phase"), 8: (10, "10X S3 FINALE")}
+                target_mult, target_lbl = s3_map.get(current_week, (1, "Standard Phase"))
+
+        elif now < self.s4_end:
+            active_season = 4
+            time_remaining = self.s4_end - now
+            current_week = int(((now - self.s3_end).total_seconds() / 86400) // 7) + 1
+            if current_week <= 4:
+                target_mult, target_lbl = 1, "S4 Glacial Phase"
+            else:
+                s4_map = {5: (3, "3X Frost Surge"), 6: (2, "2X Ice Surge"), 7: (1, "Standard Phase"), 8: (10, "10X S4 FINALE")}
+                target_mult, target_lbl = s4_map.get(current_week, (1, "Standard Phase"))
+
+        elif now < self.s5_end:
+            active_season = 5
+            time_remaining = self.s5_end - now
+            current_week = int(((now - self.s4_end).total_seconds() / 86400) // 7) + 1
+            if current_week <= 4:
+                target_mult, target_lbl = 1, "S5 Cosmic Phase"
+            else:
+                s5_map = {5: (3, "3X Eclipse Surge"), 6: (2, "2X Void Surge"), 7: (1, "Standard Phase"), 8: (10, "10X S5 FINALE")}
+                target_mult, target_lbl = s5_map.get(current_week, (1, "Standard Phase"))
+
+        elif now < self.mini_end:
+            active_season = 6  # Mini Season
+            time_remaining = self.mini_end - now
+            current_week = int(((now - self.s5_end).total_seconds() / 86400) // 7) + 1
+            mini_map = {1: (1, "Mini Season Launch"), 2: (2, "2X Blitz Weekend"), 3: (3, "3X FINAL SPRINT")}
+            target_mult, target_lbl = mini_map.get(current_week, (1, "Mini Season"))
+
+        else:
+            return {"active": False, "multiplier": 1, "label": "All Seasons Concluded", "cd": "0d 0h", "weekend": False, "season": 0}
+
+        # Calculate Weekend Activation Window
+        current_weekday = now.weekday()
+        days_until_friday = (4 - current_weekday) % 7
+        if current_weekday in [4, 5, 6, 0]:
+            days_until_friday = 4 if (current_weekday == 0 and now.hour >= 12) else (-3 if current_weekday == 0 else -(current_weekday - 4))
+
         wknd_start = datetime(now.year, now.month, now.day, 12, 0, 0, tzinfo=timezone.utc) + timedelta(days=days_until_friday)
         wknd_end = wknd_start + timedelta(days=3)
-        
-        if wknd_start <= now <= wknd_end:
-            is_weekend = True
-            
+        is_weekend = wknd_start <= now <= wknd_end
+
         final_multiplier = target_mult if is_weekend else 1
-        
         days = time_remaining.days
         hours, remainder = divmod(time_remaining.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
-        countdown_str = f"{days}d {hours:02d}h {minutes:02d}m"
-        
+
         return {
-            "active": True,
-            "season": active_season,
-            "multiplier": final_multiplier,
-            "base_multiplier": target_mult,
-            "label": target_lbl,
-            "cd": countdown_str,
-            "weekend": is_weekend,
-            "wknd_start": wknd_start,
-            "wknd_end": wknd_end
+            "active": True, "season": active_season, "multiplier": final_multiplier,
+            "base_multiplier": target_mult, "label": target_lbl, "cd": f"{days}d {hours:02d}h {minutes:02d}m",
+            "weekend": is_weekend, "wknd_start": wknd_start, "wknd_end": wknd_end
         }
 
     def get_available_tokens(self):
         earned = 0
-        for r in SEASON_2_REWARDS:
-            if r["type"] == "token" and self.player_s2_xp >= r["xp_required"]:
-                earned += 1
+        passes = [
+            (SEASON_2_REWARDS, self.player_s2_xp),
+            (SEASON_3_REWARDS, self.player_s3_xp),
+            (SEASON_4_REWARDS, self.player_s4_xp),
+            (SEASON_5_REWARDS, self.player_s5_xp),
+            (MINI_SEASON_REWARDS, self.player_mini_xp),
+        ]
+        for pass_rewards, xp in passes:
+            for r in pass_rewards:
+                if r["type"] == "token" and xp >= r["xp_required"]:
+                    earned += (3 if "MINI" in r["id"] else 1)
         return max(0, earned - self.tokens_spent)
+
+    def get_season_theme(self, season_num):
+        themes = {
+            2: {"name": "🏴‍☠️ SEASON 2: PIRATE'S PLUNDER", "bg": "#051408", "bar": "#0a2e13", "accent": "#2ecc71"},
+            3: {"name": "🔥 SEASON 3: VOLCANIC INFERNO", "bg": "#1f0505", "bar": "#3d0808", "accent": "#ff5e00"},
+            4: {"name": "❄️ SEASON 4: GLACIAL FROST", "bg": "#050f1a", "bar": "#0a192f", "accent": "#00f2fe"},
+            5: {"name": "🌌 SEASON 5: COSMIC ECLIPSE", "bg": "#12001a", "bar": "#20002c", "accent": "#ffd700"},
+            6: {"name": "⚡ MINI SEASON: OVERDRIVE BLITZ", "bg": "#1a000e", "bar": "#2b0018", "accent": "#ff007f"},
+        }
+        return themes.get(season_num, themes[2])
 
     def get_xp_multiplier(self):
         return self.get_current_event_state()["multiplier"]
@@ -266,59 +372,83 @@ class MutationArenaApp:
                     data = json.load(f)
                     self.player_xp = data.get("S1_xp", 0)
                     self.player_s2_xp = data.get("S2_xp", 0)
+                    self.player_s3_xp = data.get("S3_xp", 0)
+                    self.player_s4_xp = data.get("S4_xp", 0)
+                    self.player_s5_xp = data.get("S5_xp", 0)
+                    self.player_mini_xp = data.get("Mini_xp", 0)
                     self.tokens_spent = data.get("tokens_spent", 0)
+                    self.unlocked_legacy_cards = data.get("unlocked_legacy_cards", [])
             except Exception as e:
                 print(f"[Engine] File error parsing JSON matrix: {e}. Resetting values.")
                 self.player_xp = 0
                 self.player_s2_xp = 0
+                self.player_s3_xp = 0
+                self.player_s4_xp = 0
+                self.player_s5_xp = 0
+                self.player_mini_xp = 0
                 self.tokens_spent = 0
+                self.unlocked_legacy_cards = []
         else:
-            self.player_xp = 0  
+            self.player_xp = 0
             self.player_s2_xp = 0
+            self.player_s3_xp = 0
+            self.player_s4_xp = 0
+            self.player_s5_xp = 0
+            self.player_mini_xp = 0
             self.tokens_spent = 0
+            self.unlocked_legacy_cards = []
             self.save_xp_profile()
 
     def save_xp_profile(self):
         try:
             with open(self.xp_file, 'w') as f:
                 json.dump({
-                    "S1_xp": self.player_xp,
-                    "S2_xp": self.player_s2_xp,
-                    "tokens_spent": self.tokens_spent
+                    "S1_xp": self.player_xp, "S2_xp": self.player_s2_xp,
+                    "S3_xp": self.player_s3_xp, "S4_xp": self.player_s4_xp,
+                    "S5_xp": self.player_s5_xp, "Mini_xp": self.player_mini_xp,
+                    "tokens_spent": self.tokens_spent,
+                    "unlocked_legacy_cards": self.unlocked_legacy_cards
                 }, f, indent=4)
         except Exception as e:
             print(f"[Fatal Storage Error] Could not parse save data stream: {e}")
 
     def add_match_xp(self, base_reward=120):
         ev = self.get_current_event_state()
+        if not ev["active"]:
+            return  # All seasons over
+
         final_reward = base_reward * ev["multiplier"]
-        
-        if ev["season"] == 1:
-            self.player_xp += final_reward
-            xp_type = "S1_XP"
-            total = self.player_xp
-        elif ev["season"] == 2:
-            self.player_s2_xp += final_reward
-            xp_type = "S2_XP"
-            total = self.player_s2_xp
-        else:
-            return # Season over
-            
+        season_keys = {2: "player_s2_xp", 3: "player_s3_xp", 4: "player_s4_xp", 5: "player_s5_xp", 6: "player_mini_xp"}
+        key = season_keys.get(ev["season"])
+        if not key:
+            return
+
+        setattr(self, key, getattr(self, key) + final_reward)
         self.save_xp_profile()
-        
+
         event_tag = f" [GLOBAL {ev['multiplier']}X MULTIPLIER ACTIVE]" if ev["multiplier"] > 1 else ""
-        self.game_log(f"⭐ Data vectors merged! Received +{final_reward} {xp_type}{event_tag} (Total: {total})", "victory")
+        self.game_log(f"⭐ Data vectors merged! Received +{final_reward} S{ev['season']}_XP{event_tag} (Total: {getattr(self, key)})", "victory")
 
     def is_reward_unlocked(self, reward_id):
-        # Check S1
-        for item in SEASON_PASS_REWARDS:
+        # S1 Legacy Vault items unlock via the original XP threshold (old progress
+        # still counts) OR by buying them in the Legacy Shop with tokens.
+        if reward_id in self.unlocked_legacy_cards:
+            return True
+        for item in S1_LEGACY_REWARDS:
             if item["id"] == reward_id:
                 return self.player_xp >= item["xp_required"]
-        # Check S2
-        for item in SEASON_2_REWARDS:
-            if item["id"] == reward_id and item["type"] == "card":
-                return self.player_s2_xp >= item["xp_required"]
-        return True
+        check_list = [
+            (SEASON_2_REWARDS, self.player_s2_xp),
+            (SEASON_3_REWARDS, self.player_s3_xp),
+            (SEASON_4_REWARDS, self.player_s4_xp),
+            (SEASON_5_REWARDS, self.player_s5_xp),
+            (MINI_SEASON_REWARDS, self.player_mini_xp),
+        ]
+        for rewards, xp in check_list:
+            for item in rewards:
+                if item["id"] == reward_id and item.get("type") == "card":
+                    return xp >= item["xp_required"]
+        return False
 
     # =====================================================================
     # THREAD-SAFE APPLICATION MANAGEMENT
@@ -380,18 +510,43 @@ class MutationArenaApp:
         active_rules = [k for k, v in self.state["rules"].items() if v]
         self.rules_lbl.config(text="Global Mutations: " + (", ".join(active_rules) if active_rules else "None"))
 
+    def get_ended_seasons(self):
+        """Season numbers (2-6) whose end date has already passed."""
+        now = datetime.now(timezone.utc)
+        boundaries = {2: self.s2_end, 3: self.s3_end, 4: self.s4_end, 5: self.s5_end, 6: self.mini_end}
+        return sorted(season_num for season_num, end_time in boundaries.items() if now >= end_time)
+
+    def get_legacy_vault_seasons(self):
+        """Seasons whose cards live permanently in the Legacy Vault: S1 (always)
+        plus any season that has since concluded."""
+        return [1] + self.get_ended_seasons()
+
+    def get_active_seasonal_card_ids(self):
+        """Card-type reward IDs eligible right now: every Legacy Vault season
+        (S1 + any season that has ended), plus the CURRENTLY LIVE season's cards.
+        Seasons that haven't started yet are excluded."""
+        ev = self.get_current_event_state()
+        vault_seasons = self.get_legacy_vault_seasons()
+        ids = []
+        for season_num in vault_seasons:
+            table = SEASON_CARD_TABLES.get(season_num, [])
+            if season_num == 1:
+                ids += [r["id"] for r in table]
+            else:
+                ids += [r["id"] for r in table if r.get("type") == "card"]
+
+        if ev["active"] and ev["season"] not in vault_seasons:
+            current_table = SEASON_CARD_TABLES.get(ev["season"], [])
+            ids += [r["id"] for r in current_table if r.get("type") == "card"]
+
+        return ids
+
     def get_weighted_mutations(self, k):
         population = [m for m in MUTATION_WEIGHTS.keys() if m not in self.vaulted_cards]
-        
-        # Add unlocked S1 cards
-        for r in SEASON_PASS_REWARDS:
-            if self.is_reward_unlocked(r["id"]) and r["id"] not in self.vaulted_cards:
-                population.append(r["id"])
-                
-        # Add unlocked S2 cards
-        for r in SEASON_2_REWARDS:
-            if r["type"] == "card" and self.is_reward_unlocked(r["id"]) and r["id"] not in self.vaulted_cards:
-                population.append(r["id"])
+
+        for card_id in self.get_active_seasonal_card_ids():
+            if self.is_reward_unlocked(card_id) and card_id not in self.vaulted_cards:
+                population.append(card_id)
 
         weights = [MUTATION_WEIGHTS.get(mut, 5) for mut in population]
         chosen = []
@@ -448,16 +603,27 @@ class MutationArenaApp:
 
     def get_card_design(self, mutation_key):
         display_name = mutation_key.replace("_LTM", "").replace("_", " ")
-        is_s1_reward = any(r["id"] == mutation_key for r in SEASON_PASS_REWARDS)
-        is_s2_reward = any(r["id"] == mutation_key and r["type"] == "card" for r in SEASON_2_REWARDS)
-        
-        if mutation_key.endswith("_LTM") and (is_s1_reward or is_s2_reward):
+
+        owning_season = None
+        for season_num, table in SEASON_CARD_TABLES.items():
+            if season_num == 1:
+                if any(r["id"] == mutation_key for r in table):
+                    owning_season = 1
+                    break
+            else:
+                if any(r["id"] == mutation_key and r.get("type") == "card" for r in table):
+                    owning_season = season_num
+                    break
+
+        if mutation_key.endswith("_LTM") and owning_season is not None:
             if not self.is_reward_unlocked(mutation_key):
                 return f"🔒 [LOCKED TIER]\n{display_name}", "#242424", "#555555", "#888888", "#242424"
-            if is_s2_reward:
-                return f"🏴‍☠️ {display_name}", "#0a2e13", "#2ecc71", "#2ecc71", "#11471e"
-            return f"🌟 {display_name}", "#1b262c", "#00d2d3", "#00d2d3", "#223a47"
-            
+            if owning_season == 1:
+                return f"🌟 {display_name}", "#1b262c", "#00d2d3", "#00d2d3", "#223a47"
+            theme = self.get_season_theme(owning_season)
+            season_icon = theme["name"].split()[0]
+            return f"{season_icon} {display_name}", theme["bg"], theme["accent"], theme["accent"], theme["bar"]
+
         if mutation_key.endswith("_LTM"):
             return display_name, "#2c1a3a", "#e056fd", "#e056fd", "#431f5c"
         
@@ -942,7 +1108,90 @@ class MutationArenaApp:
         elif mutation == "SINGULARITY_LTM":
             self.state["player_hp"] = random.randint(10, 150)
             self.state["cpu_hp"] = random.randint(10, 150)
-                
+
+        # -------------------- SEASON 3: VOLCANIC INFERNO --------------------
+        elif mutation == "INFERNO_BLAST_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state[f"{target}_hp"] -= 18
+            self.state["statuses"][target]["burn"] += 3
+            self.game_log(f"🔥 INFERNO BLAST! {target.upper()} takes 18 damage and starts Burning!", "combat")
+            self.trigger_damage_cutscene(target, 18)
+        elif mutation == "MAGMA_SHIELD_LTM":
+            self.state[f"{who}_defense"] += 12
+            self.state["rules"]["damage_reflect"] = True
+            self.game_log(f"🌋 MAGMA SHIELD FORGED! +12 Shields for {who.upper()}, attackers now take reflect damage!", "system")
+        elif mutation == "VOLCANIC_ERUPTION_LTM":
+            self.state["player_hp"] -= 15
+            self.state["cpu_hp"] -= 15
+            self.game_log("🌋 VOLCANIC ERUPTION! Both combatants take 15 damage!", "combat")
+            self.trigger_damage_cutscene("player", 15)
+            self.trigger_damage_cutscene("cpu", 15)
+        elif mutation == "SOLAR_FLARE_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state["statuses"][target]["paralyze"] = True
+            self.state["base_damage"] += 8
+            self.game_log(f"☀️ SOLAR FLARE! {target.upper()} blinded & Paralyzed, Base Damage +8!", "combat")
+        elif mutation == "METEOR_STRIKE_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state[f"{target}_hp"] -= 35
+            self.game_log(f"☄️ METEOR STRIKE! {target.upper()} obliterated for 35 damage!", "combat")
+            self.trigger_damage_cutscene(target, 35)
+
+        # -------------------- SEASON 4: GLACIAL FROST --------------------
+        elif mutation == "ZERO_KELVIN_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state["statuses"][target]["freeze"] = True
+            self.game_log(f"❄️ ZERO KELVIN! {target.upper()} frozen solid!", "combat")
+        elif mutation == "ICE_BARRIER_LTM":
+            self.state[f"{who}_defense"] += 20
+            self.game_log(f"🧊 ICE BARRIER RAISED! +20 Shields for {who.upper()}!", "system")
+        elif mutation == "BLIZZARD_STORM_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state["base_damage"] = max(1, self.state["base_damage"] - 4)
+            self.state[f"{target}_hp"] -= 10
+            self.game_log(f"🌨️ BLIZZARD STORM! Base Damage -4, {target.upper()} takes 10 damage!", "combat")
+            self.trigger_damage_cutscene(target, 10)
+        elif mutation == "FROSTBITE_LTM":
+            self.state["base_damage"] = max(1, self.state["base_damage"] - 6)
+            self.game_log("🥶 FROSTBITE! Enemy Base Damage permanently reduced by 6!", "system")
+        elif mutation == "ABSOLUTE_ZERO_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state[f"{target}_defense"] = 0
+            self.state["statuses"][target]["freeze"] = True
+            self.game_log(f"❄️ ABSOLUTE ZERO! {target.upper()}'s Shields wiped and Frozen solid!", "combat")
+
+        # -------------------- SEASON 5: COSMIC ECLIPSE --------------------
+        elif mutation == "COSMIC_BEAM_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state[f"{target}_hp"] -= 22
+            self.game_log(f"🌌 COSMIC BEAM! Pierces all defenses, {target.upper()} takes 22 pure damage!", "combat")
+            self.trigger_damage_cutscene(target, 22)
+        elif mutation == "GRAVITY_WELL_LTM":
+            target = "cpu" if who == "player" else "player"
+            self.state["statuses"][target]["sleep"] = 2
+            self.state[f"{who}_hp"] += 15
+            self.game_log(f"🕳️ GRAVITY WELL! {target.upper()} trapped asleep, {who.upper()} recovers 15 HP!", "system")
+        elif mutation == "SUPERNOVA_LTM":
+            target = "cpu" if who == "player" else "player"
+            dmg = random.randint(10, 40)
+            self.state[f"{target}_hp"] -= dmg
+            self.game_log(f"💥 SUPERNOVA! Random blast deals {dmg} damage to {target.upper()}!", "combat")
+            self.trigger_damage_cutscene(target, dmg)
+        elif mutation == "CHRONO_DISRUPTION_LTM":
+            self.state["turn"] = 1
+            self.state["rules"]["double_damage"] = True
+            self.game_log("⏱️ CHRONO DISRUPTION! Round counter reset, Double Damage engaged!", "system")
+        elif mutation == "EVENT_HORIZON_LTM":
+            self.state["player_hp"], self.state["cpu_hp"] = self.state["cpu_hp"], self.state["player_hp"]
+            self.state[f"{who}_defense"] += 8
+            self.game_log(f"🕳️ EVENT HORIZON! HP states swapped, +8 Shields for {who.upper()}!", "system")
+
+        # -------------------- MINI SEASON: OVERDRIVE BLITZ --------------------
+        elif mutation == "HYPER_DRIVE_LTM":
+            self.state["base_damage"] *= 3
+            self.state[f"{who}_hp"] += 30
+            self.game_log(f"⚡ HYPER DRIVE ENGAGED! Base Damage tripled, {who.upper()} heals 30 HP!", "victory")
+
         if self.check_game_over(): return
         self.update_status_displays()
 
@@ -1032,14 +1281,10 @@ class MutationArenaApp:
             self.event_banner_lbl.config(text="📡 SEASONS COMPLETE: Standby for new deployment protocols.", bg="#1a1a1a", fg="#cccccc")
             return
 
+        theme = self.get_season_theme(ev["season"])
         if ev["weekend"]:
-            if ev["season"] == 1:
-                banner_text = f"🔥 BATTLE PASS EVENT LIVE: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
-                if ev["base_multiplier"] == 10: banner_text += " [S2 DESIGN COMPONENT ACTIVE]"
-                self.event_banner_lbl.config(text=banner_text, bg="#3a0000", fg="#ff3333")
-            elif ev["season"] == 2:
-                banner_text = f"🏴‍☠️ PIRATE RAID WEEKEND: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
-                self.event_banner_lbl.config(text=banner_text, bg="#0a2e13", fg="#2ecc71")
+            banner_text = f"{theme['name']} EVENT LIVE: {ev['label']} ({ev['multiplier']}X XP)! | Season Ends In: {ev['cd']}"
+            self.event_banner_lbl.config(text=banner_text, bg=theme["bar"], fg=theme["accent"])
         else:
             now = datetime.now(timezone.utc)
             time_until = ev["wknd_start"] - now
@@ -1067,26 +1312,19 @@ class MutationArenaApp:
         hdr.pack(side="left", padx=20, pady=10)
         
         ev = self.get_current_event_state()
-        if ev["season"] == 2:
-            pass_text = "🏴‍☠️ VIEW SEASON 2 PASS"
-            bg_c = "#0a2e13"
-            fg_c = "#2ecc71"
-            
-            # Legacy Shop Button explicitly for Season 2
-            shop_btn = tk.Button(control_banner, text="🏪 LEGACY SHOP", font=("Courier", 11, "bold"), bg="#d35400", fg="#ffffff",
-                                 command=self.display_legacy_shop_gui)
-            shop_btn.pack(side="right", padx=10, pady=15)
-        else:
-            if ev["active"] and ev["weekend"] and ev["base_multiplier"] == 10:
-                pass_text = "🎨 DESIGN SEASON 2 PASS"
-                bg_c = "#005f73"
-                fg_c = "#94d2bd"
-            else:
-                pass_text = "👾 VIEW SEASON PASS"
-                bg_c = "#431f5c"
-                fg_c = "#e056fd"
+        theme = self.get_season_theme(ev["season"] if ev["active"] else 2)
 
-        pass_btn = tk.Button(control_banner, text=pass_text, font=("Courier", 11, "bold"), bg=bg_c, fg=fg_c,
+        # Legacy Shop is always available, independent of the currently live season
+        shop_btn = tk.Button(control_banner, text="🏪 LEGACY SHOP", font=("Courier", 11, "bold"), bg="#d35400", fg="#ffffff",
+                             command=self.display_legacy_shop_gui)
+        shop_btn.pack(side="right", padx=10, pady=15)
+
+        if ev["active"]:
+            pass_text = f"{theme['name'].split()[0]} VIEW PASS (S{ev['season']})"
+        else:
+            pass_text = "👾 VIEW SEASON PASS"
+
+        pass_btn = tk.Button(control_banner, text=pass_text, font=("Courier", 11, "bold"), bg=theme["bar"], fg=theme["accent"],
                              command=self.display_season_pass_gui)
         pass_btn.pack(side="right", padx=10, pady=15)
         
@@ -1104,10 +1342,9 @@ class MutationArenaApp:
         scroll_canvas.pack(side="left", fill="both", expand=True, padx=30, pady=10)
         scrollbar.pack(side="right", fill="y")
         
-        # Build list of mutations, maintaining S1 and only S2 CARD rewards
-        s2_cards = [r["id"] for r in SEASON_2_REWARDS if r["type"] == "card"]
-        s1_cards = [r["id"] for r in SEASON_PASS_REWARDS]
-        all_muts = list(MUTATION_WEIGHTS.keys()) + s1_cards + s2_cards
+        # Build list of mutations: base pool + the S1 Legacy Vault + only the CURRENTLY LIVE
+        # season's cards (locked-but-unearned ones still render greyed-out; future seasons hidden entirely)
+        all_muts = list(MUTATION_WEIGHTS.keys()) + self.get_active_seasonal_card_ids()
         all_muts = [m for m in all_muts if m not in self.vaulted_cards]
         
         def draft_pick(name):
@@ -1146,34 +1383,38 @@ class MutationArenaApp:
         shop_grid = tk.Frame(self.legacy_shop_frame, bg="#1e1e1e")
         shop_grid.pack(expand=True, fill="both", padx=40)
         
-        def attempt_purchase(tier_req, reward_id):
+        def attempt_purchase(card_id):
             if self.get_available_tokens() >= 3:
-                self.player_xp = tier_req
                 self.tokens_spent += 3
+                self.unlocked_legacy_cards.append(card_id)
                 self.save_xp_profile()
-                messagebox.showinfo("PURCHASE SUCCESS", f"Unlocked {reward_id} for 3 Tokens!")
+                messagebox.showinfo("PURCHASE SUCCESS", f"Unlocked {card_id} for 3 Tokens!")
                 self.display_legacy_shop_gui()
             else:
                 messagebox.showerror("INSUFFICIENT TOKENS", "You need 3 Legacy Tokens to unlock this item.")
-                
-        # Find next un-unlocked S1 item
-        target_item = None
-        for item in SEASON_PASS_REWARDS:
-            if self.player_xp < item["xp_required"]:
-                target_item = item
-                break
-                
+
+        # Find next un-unlocked item across every Legacy Vault season (S1 + any concluded season)
+        vault_card_pool = []
+        for season_num in self.get_legacy_vault_seasons():
+            table = SEASON_CARD_TABLES.get(season_num, [])
+            if season_num == 1:
+                vault_card_pool += table
+            else:
+                vault_card_pool += [item for item in table if item.get("type") == "card"]
+
+        target_item = next((item for item in vault_card_pool if not self.is_reward_unlocked(item["id"])), None)
+
         if target_item:
             card = tk.Frame(shop_grid, bg="#2c1a3a", highlightbackground="#e056fd", highlightthickness=3, width=300, height=350)
             card.pack(pady=40)
             card.pack_propagate(False)
             
-            tk.Label(card, text="NEXT S1 LEGACY UNLOCK", font=("Courier", 12, "bold"), fg="#ffffff", bg="#2c1a3a").pack(pady=10)
+            tk.Label(card, text="NEXT LEGACY VAULT UNLOCK", font=("Courier", 12, "bold"), fg="#ffffff", bg="#2c1a3a").pack(pady=10)
             tk.Label(card, text=target_item["id"].replace("_", " "), font=("Courier", 16, "bold"), fg="#e056fd", bg="#2c1a3a", wraplength=280).pack(pady=20)
             tk.Label(card, text=target_item["desc"], font=("Courier", 10), fg="#cccccc", bg="#2c1a3a", wraplength=280).pack(pady=10)
             
             btn = tk.Button(card, text="UNLOCK (COST: 3 TOKENS)", font=("Courier", 12, "bold"), bg="#d35400", fg="#ffffff",
-                            command=lambda: attempt_purchase(target_item["xp_required"], target_item["id"]))
+                            command=lambda: attempt_purchase(target_item["id"]))
             btn.pack(side="bottom", pady=20)
         else:
             tk.Label(shop_grid, text="ALL LEGACY ITEMS UNLOCKED!", font=("Courier", 20, "bold"), fg="#f1c40f", bg="#1e1e1e").pack(pady=100)
@@ -1184,93 +1425,68 @@ class MutationArenaApp:
 
     def display_season_pass_gui(self):
         if self.draft_frame: self.draft_frame.place_forget()
-        self.pass_frame = tk.Frame(self.root, bg="#0d0d11")
-        self.pass_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
-        
-        top_bar = tk.Frame(self.pass_frame, bg="#161623", height=70)
-        top_bar.pack(fill="x", side="top")
-        
+
         ev = self.get_current_event_state()
-        is_s1_prototype = ev["active"] and ev["season"] == 1 and ev["weekend"] and ev["base_multiplier"] == 10
-        is_s2 = ev["season"] == 2
-        
-        if is_s2:
-            top_bar.config(bg="#0a2e13")
-            self.pass_frame.config(bg="#051408")
-            title_txt = "🏴‍☠️ SEASON 2: PIRATE'S PLUNDER 🏴‍☠️"
-            title_color = "#2ecc71"
-        else:
-            title_txt = "🎨 SEASON 2 BLUEPRINT ARCHITECT" if is_s1_prototype else "⚡ SEASON 1 BATTLE PASS ⚡"
-            title_color = "#00d2d3"
-            
-        title_lbl = tk.Label(top_bar, text=title_txt, font=("Courier", 18, "bold"), fg=title_color, bg=top_bar.cget("bg"))
+        season_num = ev["season"] if ev["active"] else 2
+        theme = self.get_season_theme(season_num)
+
+        self.pass_frame = tk.Frame(self.root, bg=theme["bg"])
+        self.pass_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        top_bar = tk.Frame(self.pass_frame, bg=theme["bar"], height=70)
+        top_bar.pack(fill="x", side="top")
+
+        title_lbl = tk.Label(top_bar, text=theme["name"], font=("Courier", 18, "bold"), fg=theme["accent"], bg=top_bar.cget("bg"))
         title_lbl.pack(side="left", padx=20, pady=15)
-        
+
         return_btn = tk.Button(top_bar, text="⬅️ RETURN TO DECK DRAFT", font=("Courier", 11, "bold"), bg="#222f3e", fg="#c8d6e5",
                                command=self.hide_season_pass_gui)
         return_btn.pack(side="right", padx=20, pady=15)
-        
-        xp_container = tk.Frame(self.pass_frame, bg="#1a1a24" if not is_s2 else "#0b1f10", highlightbackground="#333344", highlightthickness=1)
+
+        xp_key_map = {2: "player_s2_xp", 3: "player_s3_xp", 4: "player_s4_xp", 5: "player_s5_xp", 6: "player_mini_xp"}
+        current_xp = getattr(self, xp_key_map.get(season_num, "player_s2_xp"), 0)
+        display_dataset = SEASON_CARD_TABLES.get(season_num, SEASON_2_REWARDS)
+        max_xp = display_dataset[-1]["xp_required"] if display_dataset else 1
+
+        xp_container = tk.Frame(self.pass_frame, bg=theme["bar"], highlightbackground="#333344", highlightthickness=1)
         xp_container.pack(fill="x", padx=40, pady=20)
-        
-        if is_s2:
-            xp_status_text = f"S2 Plunder Progress: {self.player_s2_xp} S2_XP | Legacy Tokens: {self.get_available_tokens()}"
-            progress_ratio = min(1.0, self.player_s2_xp / 20000)
-            fill_color = "#2ecc71"
-        else:
-            xp_status_text = f"S2 Concept Draft Active | Profile Anchor: {self.player_xp} XP" if is_s1_prototype else f"Profile Progression Status: {self.player_xp} Total S1_XP"
-            progress_ratio = min(1.0, self.player_xp / 1200)
-            fill_color = "#ff9f43" if is_s1_prototype else "#00d2d3"
-            
+
+        xp_status_text = f"Season {season_num} Progress: {current_xp} XP | Legacy Tokens: {self.get_available_tokens()}"
+        progress_ratio = min(1.0, current_xp / max_xp)
+
         xp_info_lbl = tk.Label(xp_container, text=xp_status_text, font=("Courier", 13, "bold"), fg="#ffffff", bg=xp_container.cget("bg"))
         xp_info_lbl.pack(anchor="w", padx=15, pady=10)
-        
-        bar_bg = tk.Frame(xp_container, bg="#2d2d3d" if not is_s2 else "#17361e", height=25)
+
+        bar_bg = tk.Frame(xp_container, bg="#2d2d3d", height=25)
         bar_bg.pack(fill="x", padx=15, pady=10)
-        
-        progress_fill = tk.Frame(bar_bg, bg=fill_color, height=25)
+
+        progress_fill = tk.Frame(bar_bg, bg=theme["accent"], height=25)
         progress_fill.place(relx=0, rely=0, relwidth=progress_ratio, relheight=1)
-        
+
         rewards_scroll_canvas = tk.Canvas(self.pass_frame, bg=self.pass_frame.cget("bg"), highlightthickness=0)
         rewards_scrollbar = tk.Scrollbar(self.pass_frame, orient="vertical", command=rewards_scroll_canvas.yview)
         rewards_grid = tk.Frame(rewards_scroll_canvas, bg=self.pass_frame.cget("bg"))
-        
+
         rewards_grid.bind("<Configure>", lambda e: rewards_scroll_canvas.configure(scrollregion=rewards_scroll_canvas.bbox("all")))
         rewards_scroll_canvas.create_window((0, 0), window=rewards_grid, anchor="nw")
         rewards_scroll_canvas.configure(yscrollcommand=rewards_scrollbar.set)
-        
+
         rewards_scroll_canvas.pack(side="left", fill="both", expand=True, padx=40, pady=10)
         rewards_scrollbar.pack(side="right", fill="y")
-        
-        if is_s2:
-            display_dataset = SEASON_2_REWARDS
-        elif is_s1_prototype:
-            display_dataset = [
-                {"tier": i+1, "xp_required": (i+1)*200, "id": f"S2_PROTOTYPE_{i+1}_LTM", "desc": "Experimental Season 2 payload modification matrix."}
-                for i in range(5)
-            ]
-        else:
-            display_dataset = SEASON_PASS_REWARDS
 
         for item in display_dataset:
-            if is_s2:
-                unlocked = self.player_s2_xp >= item["xp_required"]
-                status_color = "#2ecc71" if unlocked else "#e74c3c"
-                status_txt = "✔️ UNLOCKED" if unlocked else f"🔒 LOCK: {item['xp_required']} XP"
-            else:
-                unlocked = self.player_xp >= item["xp_required"]
-                status_color = "#94d2bd" if is_s1_prototype else ("#00d2d3" if unlocked else "#ff7675")
-                status_txt = "[S2 PROTOTYPE DESIGN]" if is_s1_prototype else ("✔️ UNLOCKED" if unlocked else f"🔒 LOCK: {item['xp_required']} XP")
-            
-            row_item = tk.Frame(rewards_grid, bg="#161623" if not is_s2 else "#0b1f10", highlightbackground="#333344" if not is_s2 else "#17361e", highlightthickness=1, width=820, height=80)
+            unlocked = current_xp >= item["xp_required"]
+            status_color = theme["accent"] if unlocked else "#e74c3c"
+            status_txt = "✔️ UNLOCKED" if unlocked else f"🔒 LOCK: {item['xp_required']} XP"
+
+            row_item = tk.Frame(rewards_grid, bg=theme["bar"], highlightbackground="#333344", highlightthickness=1, width=820, height=80)
             row_item.pack(fill="x", pady=8, padx=5)
             row_item.pack_propagate(False)
-            
-            tier_color = "#ff9f43" if not is_s2 else "#f1c40f"
-            tk.Label(row_item, text=f"TIER {item['tier']}", font=("Courier", 14, "bold"), fg=tier_color, bg=row_item.cget("bg")).pack(side="left", padx=15)
+
+            tk.Label(row_item, text=f"TIER {item['tier']}", font=("Courier", 14, "bold"), fg=theme["accent"], bg=row_item.cget("bg")).pack(side="left", padx=15)
             meta = tk.Frame(row_item, bg=row_item.cget("bg"))
             meta.pack(side="left", fill="both", pady=10, padx=10)
-            
+
             item_display_name = item["id"].replace("_", " ") if "id" in item else "TOKEN"
             tk.Label(meta, text=item_display_name, font=("Courier", 12, "bold"), fg="#ffffff", bg=meta.cget("bg")).pack(anchor="w")
             tk.Label(meta, text=item.get("desc", ""), font=("Courier", 9), fg="#a4b0be", bg=meta.cget("bg")).pack(anchor="w")
