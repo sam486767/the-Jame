@@ -146,6 +146,8 @@ TRIVIA = [
 # CENTRALISED SYSTEM APPLICATION ENGINE
 # =====================================================================
 class MutationArenaApp:
+    XP_FILENAME = "xp.json"
+
     def __init__(self, root_window):
         self.root = root_window
         self.root.title("MUTATION ARENA: CARD EDITION")
@@ -202,7 +204,7 @@ class MutationArenaApp:
         self.event_banner_lbl = None
 
         # Profile Execution Data Layer
-        self.xp_file = "xp.json"
+        self.xp_file = self.XP_FILENAME
         self.player_xp = 0        # Legacy / S1_xp
         self.player_s2_xp = 0     # S2_xp
         self.player_s3_xp = 0     # S3_xp
@@ -211,7 +213,9 @@ class MutationArenaApp:
         self.player_mini_xp = 0   # Mini_xp
         self.tokens_spent = 0     # Track legacy tokens spent
         self.unlocked_legacy_cards = []  # S1 Legacy Vault items purchased with tokens
+        self.season_history = {}         # Frozen {level, xp} snapshot per season, written once it ends
         self.load_xp_profile()
+        self.archive_ended_seasons()
 
         # Vault System Sync
         self.vaulted_cards = []
@@ -349,6 +353,7 @@ class MutationArenaApp:
 
     def reset_game_state(self):
         self.load_xp_profile()
+        self.archive_ended_seasons()
         self.bomb_timer = None
         self.mutation_turn_toggle = True
         self.processing_turn = False
@@ -378,6 +383,7 @@ class MutationArenaApp:
                     self.player_mini_xp = data.get("Mini_xp", 0)
                     self.tokens_spent = data.get("tokens_spent", 0)
                     self.unlocked_legacy_cards = data.get("unlocked_legacy_cards", [])
+                    self.season_history = data.get("season_history", {})
             except Exception as e:
                 print(f"[Engine] File error parsing JSON matrix: {e}. Resetting values.")
                 self.player_xp = 0
@@ -388,6 +394,7 @@ class MutationArenaApp:
                 self.player_mini_xp = 0
                 self.tokens_spent = 0
                 self.unlocked_legacy_cards = []
+                self.season_history = {}
         else:
             self.player_xp = 0
             self.player_s2_xp = 0
@@ -397,6 +404,7 @@ class MutationArenaApp:
             self.player_mini_xp = 0
             self.tokens_spent = 0
             self.unlocked_legacy_cards = []
+            self.season_history = {}
             self.save_xp_profile()
 
     def save_xp_profile(self):
@@ -407,10 +415,42 @@ class MutationArenaApp:
                     "S3_xp": self.player_s3_xp, "S4_xp": self.player_s4_xp,
                     "S5_xp": self.player_s5_xp, "Mini_xp": self.player_mini_xp,
                     "tokens_spent": self.tokens_spent,
-                    "unlocked_legacy_cards": self.unlocked_legacy_cards
+                    "unlocked_legacy_cards": self.unlocked_legacy_cards,
+                    "season_history": self.season_history
                 }, f, indent=4)
         except Exception as e:
             print(f"[Fatal Storage Error] Could not parse save data stream: {e}")
+
+    def get_season_level(self, season_num):
+        xp_key_map = {1: "player_xp", 2: "player_s2_xp", 3: "player_s3_xp",
+                      4: "player_s4_xp", 5: "player_s5_xp", 6: "player_mini_xp"}
+        table = SEASON_CARD_TABLES.get(season_num, [])
+        current_xp = getattr(self, xp_key_map.get(season_num, "player_s2_xp"), 0)
+        level = 0
+        for item in table:
+            if current_xp >= item["xp_required"]:
+                level = item["tier"]
+        return level
+
+    def archive_ended_seasons(self):
+        """Freeze each concluded season's final level + XP into season_history, once."""
+        xp_key_map = {1: "player_xp", 2: "player_s2_xp", 3: "player_s3_xp",
+                      4: "player_s4_xp", 5: "player_s5_xp", 6: "player_mini_xp"}
+        ended = self.get_ended_seasons()
+        if datetime.now(timezone.utc) >= self.season_end:
+            ended = [1] + ended
+
+        changed = False
+        for season_num in ended:
+            key = str(season_num)
+            if key not in self.season_history:
+                self.season_history[key] = {
+                    "level": self.get_season_level(season_num),
+                    "xp": getattr(self, xp_key_map[season_num])
+                }
+                changed = True
+        if changed:
+            self.save_xp_profile()
 
     def add_match_xp(self, base_reward=120):
         ev = self.get_current_event_state()
