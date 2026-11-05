@@ -4,6 +4,7 @@ import sys
 import time
 import json
 import os
+import re
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from datetime import datetime, timezone, timedelta
@@ -146,7 +147,11 @@ TRIVIA = [
 # CENTRALISED SYSTEM APPLICATION ENGINE
 # =====================================================================
 class MutationArenaApp:
-    XP_FILENAME = "xp.json"
+    PROFILE_FILENAME = "profile.json"
+    LEGACY_XP_FILENAME = "xp.json"   # read once for migration, never written or deleted
+    PROFILE_SCHEMA = 1
+    NAME_PATTERN = re.compile(r"^[A-Za-z0-9 _-]{3,16}$")
+    SEASON_LABELS = {1: "Season 1 (Legacy)", 2: "Season 2", 3: "Season 3", 4: "Season 4", 5: "Season 5", 6: "Mini Season"}
 
     def __init__(self, root_window):
         self.root = root_window
@@ -204,7 +209,7 @@ class MutationArenaApp:
         self.event_banner_lbl = None
 
         # Profile Execution Data Layer
-        self.xp_file = self.XP_FILENAME
+        self.profile_file = self.PROFILE_FILENAME
         self.player_xp = 0        # Legacy / S1_xp
         self.player_s2_xp = 0     # S2_xp
         self.player_s3_xp = 0     # S3_xp
@@ -214,7 +219,11 @@ class MutationArenaApp:
         self.tokens_spent = 0     # Track legacy tokens spent
         self.unlocked_legacy_cards = []  # S1 Legacy Vault items purchased with tokens
         self.season_history = {}         # Frozen {level, xp} snapshot per season, written once it ends
-        self.load_xp_profile()
+        self.player_name = None          # Set once, then locked
+        self.name_locked = False
+        self.stats = self._default_stats()
+        self.profile_frame = None
+        self.load_profile()
         self.archive_ended_seasons()
 
         # Vault System Sync
@@ -370,56 +379,174 @@ class MutationArenaApp:
         })
         self.clear_rules_dict()
 
-    def load_xp_profile(self):
-        if os.path.exists(self.xp_file):
-            try:
-                with open(self.xp_file, 'r') as f:
-                    data = json.load(f)
-                    self.player_xp = data.get("S1_xp", 0)
-                    self.player_s2_xp = data.get("S2_xp", 0)
-                    self.player_s3_xp = data.get("S3_xp", 0)
-                    self.player_s4_xp = data.get("S4_xp", 0)
-                    self.player_s5_xp = data.get("S5_xp", 0)
-                    self.player_mini_xp = data.get("Mini_xp", 0)
-                    self.tokens_spent = data.get("tokens_spent", 0)
-                    self.unlocked_legacy_cards = data.get("unlocked_legacy_cards", [])
-                    self.season_history = data.get("season_history", {})
-            except Exception as e:
-                print(f"[Engine] File error parsing JSON matrix: {e}. Resetting values.")
-                self.player_xp = 0
-                self.player_s2_xp = 0
-                self.player_s3_xp = 0
-                self.player_s4_xp = 0
-                self.player_s5_xp = 0
-                self.player_mini_xp = 0
-                self.tokens_spent = 0
-                self.unlocked_legacy_cards = []
-                self.season_history = {}
-        else:
-            self.player_xp = 0
-            self.player_s2_xp = 0
-            self.player_s3_xp = 0
-            self.player_s4_xp = 0
-            self.player_s5_xp = 0
-            self.player_mini_xp = 0
-            self.tokens_spent = 0
-            self.unlocked_legacy_cards = []
-            self.season_history = {}
-            self.save_xp_profile()
+    # =====================================================================
+    # PROFILE STORAGE (profile.json — replaces xp.json)
+    # =====================================================================
+    @staticmethod
+    def _default_stats():
+        return {"matches_played": 0, "wins": 0, "losses": 0, "card_usage": {}}
 
-    def save_xp_profile(self):
+    def _reset_profile_fields(self):
+        self.player_xp = 0
+        self.player_s2_xp = 0
+        self.player_s3_xp = 0
+        self.player_s4_xp = 0
+        self.player_s5_xp = 0
+        self.player_mini_xp = 0
+        self.tokens_spent = 0
+        self.unlocked_legacy_cards = []
+        self.season_history = {}
+        self.player_name = None
+        self.name_locked = False
+        self.stats = self._default_stats()
+
+    def _apply_legacy_xp(self, data):
+        """Old xp.json layout: flat S1_xp..Mini_xp keys."""
+        self.player_xp = data.get("S1_xp", 0)
+        self.player_s2_xp = data.get("S2_xp", 0)
+        self.player_s3_xp = data.get("S3_xp", 0)
+        self.player_s4_xp = data.get("S4_xp", 0)
+        self.player_s5_xp = data.get("S5_xp", 0)
+        self.player_mini_xp = data.get("Mini_xp", 0)
+        self.tokens_spent = data.get("tokens_spent", 0)
+        self.unlocked_legacy_cards = data.get("unlocked_legacy_cards", [])
+        self.season_history = data.get("season_history", {})
+
+    def _apply_profile_data(self, data):
+        xp = data.get("xp", {})
+        self.player_xp = xp.get("S1", 0)
+        self.player_s2_xp = xp.get("S2", 0)
+        self.player_s3_xp = xp.get("S3", 0)
+        self.player_s4_xp = xp.get("S4", 0)
+        self.player_s5_xp = xp.get("S5", 0)
+        self.player_mini_xp = xp.get("Mini", 0)
+        self.tokens_spent = data.get("tokens_spent", 0)
+        self.unlocked_legacy_cards = data.get("unlocked_legacy_cards", [])
+        self.season_history = data.get("season_history", {})
+        name = data.get("name")
+        self.player_name = name if isinstance(name, str) and name else None
+        self.name_locked = bool(data.get("name_locked", False)) and self.player_name is not None
+        # Merge over defaults so older profiles gain any stat keys added later
+        stats = self._default_stats()
+        saved = data.get("stats", {})
+        if isinstance(saved, dict):
+            for key in ("matches_played", "wins", "losses"):
+                if isinstance(saved.get(key), int):
+                    stats[key] = saved[key]
+            if isinstance(saved.get("card_usage"), dict):
+                stats["card_usage"] = saved["card_usage"]
+        self.stats = stats
+
+    @staticmethod
+    def _backup_unreadable(path):
         try:
-            with open(self.xp_file, 'w') as f:
-                json.dump({
-                    "S1_xp": self.player_xp, "S2_xp": self.player_s2_xp,
-                    "S3_xp": self.player_s3_xp, "S4_xp": self.player_s4_xp,
-                    "S5_xp": self.player_s5_xp, "Mini_xp": self.player_mini_xp,
-                    "tokens_spent": self.tokens_spent,
-                    "unlocked_legacy_cards": self.unlocked_legacy_cards,
-                    "season_history": self.season_history
-                }, f, indent=4)
+            backup = f"{path}.corrupt-{int(time.time())}"
+            os.replace(path, backup)
+            print(f"[Profile] Unreadable file preserved as {backup}")
         except Exception as e:
-            print(f"[Fatal Storage Error] Could not parse save data stream: {e}")
+            print(f"[Profile] Could not back up unreadable file: {e}")
+
+    def load_profile(self):
+        self._reset_profile_fields()
+
+        if os.path.exists(self.profile_file):
+            try:
+                with open(self.profile_file, "r", encoding="utf-8") as f:
+                    self._apply_profile_data(json.load(f))
+            except Exception as e:
+                print(f"[Profile] Error parsing profile.json: {e}. Starting a fresh profile.")
+                self._backup_unreadable(self.profile_file)
+                self._reset_profile_fields()
+                self.save_profile()
+            return
+
+        # No profile yet: migrate from xp.json if it exists (file is left untouched)
+        if os.path.exists(self.LEGACY_XP_FILENAME):
+            try:
+                with open(self.LEGACY_XP_FILENAME, "r", encoding="utf-8") as f:
+                    self._apply_legacy_xp(json.load(f))
+                print("[Profile] Migrated xp.json -> profile.json")
+            except Exception as e:
+                print(f"[Profile] Could not read xp.json for migration: {e}")
+                self._reset_profile_fields()
+        self.save_profile()
+
+    def save_profile(self):
+        payload = {
+            "schema_version": self.PROFILE_SCHEMA,
+            "name": self.player_name,
+            "name_locked": self.name_locked,
+            "xp": {
+                "S1": self.player_xp, "S2": self.player_s2_xp, "S3": self.player_s3_xp,
+                "S4": self.player_s4_xp, "S5": self.player_s5_xp, "Mini": self.player_mini_xp,
+            },
+            "tokens_spent": self.tokens_spent,
+            "unlocked_legacy_cards": self.unlocked_legacy_cards,
+            "season_history": self.season_history,
+            "stats": self.stats,
+        }
+        tmp_path = self.profile_file + ".tmp"
+        try:
+            # Write-then-swap so a crash or update shutdown mid-write can't truncate the profile
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=4)
+            os.replace(tmp_path, self.profile_file)
+        except Exception as e:
+            print(f"[Fatal Storage Error] Could not save profile: {e}")
+
+    # Old names kept so existing call sites keep working
+    load_xp_profile = load_profile
+    save_xp_profile = save_profile
+
+    # =====================================================================
+    # PROFILE STATS + NAME
+    # =====================================================================
+    def profiles_live(self):
+        """Profiles switch on when Season 4 begins (the moment Season 3 ends)."""
+        return datetime.now(timezone.utc) >= self.s3_end
+
+    def record_card_use(self, card_name):
+        if not self.profiles_live(): return
+        usage = self.stats["card_usage"]
+        usage[card_name] = usage.get(card_name, 0) + 1
+
+    def record_match_result(self, won):
+        if not self.profiles_live(): return
+        self.stats["matches_played"] += 1
+        self.stats["wins" if won else "losses"] += 1
+        self.save_profile()
+
+    def get_most_used_card(self):
+        usage = self.stats["card_usage"]
+        if not usage:
+            return None
+        # Highest count wins; ties resolve alphabetically so the result is stable
+        name = min(usage, key=lambda k: (-usage[k], k))
+        return name, usage[name]
+
+    def ensure_player_name(self):
+        """One-time name setup. Cancelling postpones it to the next launch."""
+        if not self.profiles_live() or (self.name_locked and self.player_name):
+            return
+        prompt = ("Choose your operator name.\n\n"
+                  "3-16 characters: letters, numbers, spaces, _ or -\n"
+                  "This can only be set ONCE.")
+        error = ""
+        while True:
+            entered = simpledialog.askstring("Create Your Profile", error + prompt, parent=self.root)
+            if entered is None:
+                return
+            entered = " ".join(entered.split())
+            if not self.NAME_PATTERN.match(entered):
+                error = "That name isn't valid.\n\n"
+                continue
+            if not messagebox.askyesno("Confirm Name", f"Lock in '{entered}'?\n\nYou won't be able to change it later."):
+                error = ""
+                continue
+            self.player_name = entered
+            self.name_locked = True
+            self.save_profile()
+            return
 
     def get_season_level(self, season_num):
         xp_key_map = {1: "player_xp", 2: "player_s2_xp", 3: "player_s3_xp",
@@ -719,9 +846,11 @@ class MutationArenaApp:
 
             if p_won:
                 msg += "PLAYER WINS! Synchronizing data vectors...\n\n"
+                self.record_match_result(True)
                 self.add_match_xp(10)  
             else:
                 msg += "MATCH CONCLUDED.\n\n"
+                self.record_match_result(False)
                 self.add_match_xp(5)   
                 
             replay = messagebox.askyesno("⚡ ARENA TERMINATION ⚡", msg + "Draft a new deck and play another match?")
@@ -1302,6 +1431,7 @@ class MutationArenaApp:
         def select_card(name):
             if name in self.state["player_deck"] and name not in rnd_options:
                 self.state["player_deck"].remove(name)
+            self.record_card_use(name)
             self.apply_mutation(name, "player")
             self.clear_action_space()
             next_step_callback()
@@ -1358,6 +1488,11 @@ class MutationArenaApp:
         shop_btn = tk.Button(control_banner, text="🏪 LEGACY SHOP", font=("Courier", 11, "bold"), bg="#d35400", fg="#ffffff",
                              command=self.display_legacy_shop_gui)
         shop_btn.pack(side="right", padx=10, pady=15)
+
+        if self.profiles_live():
+            profile_btn = tk.Button(control_banner, text="👤 PROFILE", font=("Courier", 11, "bold"), bg="#2d3436", fg="#dfe6e9",
+                                    command=self.display_profile_gui)
+            profile_btn.pack(side="right", padx=10, pady=15)
 
         if ev["active"]:
             pass_text = f"{theme['name'].split()[0]} VIEW PASS (S{ev['season']})"
@@ -1532,6 +1667,83 @@ class MutationArenaApp:
             tk.Label(meta, text=item.get("desc", ""), font=("Courier", 9), fg="#a4b0be", bg=meta.cget("bg")).pack(anchor="w")
             tk.Label(row_item, text=status_txt, font=("Courier", 11, "bold"), fg=status_color, bg=row_item.cget("bg")).pack(side="right", padx=20)
 
+    def display_profile_gui(self):
+        if self.draft_frame: self.draft_frame.place_forget()
+
+        ev = self.get_current_event_state()
+        live_season = ev["season"] if ev["active"] else 0
+        theme = self.get_season_theme(live_season if live_season else 2)
+
+        self.profile_frame = tk.Frame(self.root, bg=theme["bg"])
+        self.profile_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        top_bar = tk.Frame(self.profile_frame, bg=theme["bar"], height=70)
+        top_bar.pack(fill="x", side="top")
+        tk.Label(top_bar, text="👤 OPERATOR PROFILE", font=("Courier", 18, "bold"), fg=theme["accent"], bg=theme["bar"]).pack(side="left", padx=20, pady=15)
+        tk.Button(top_bar, text="⬅️ RETURN TO DECK DRAFT", font=("Courier", 11, "bold"), bg="#222f3e", fg="#c8d6e5",
+                  command=self.hide_profile_gui).pack(side="right", padx=20, pady=15)
+
+        # --- Identity ---
+        ident = tk.Frame(self.profile_frame, bg=theme["bar"], highlightbackground="#333344", highlightthickness=1)
+        ident.pack(fill="x", padx=40, pady=(20, 10))
+        display_name = self.player_name or "Unnamed Operator"
+        tk.Label(ident, text=display_name, font=("Courier", 20, "bold"), fg="#ffffff", bg=theme["bar"]).pack(anchor="w", padx=15, pady=(10, 2))
+        if not self.name_locked:
+            def set_name_now():
+                self.ensure_player_name()
+                self.hide_profile_gui()
+                self.display_profile_gui()
+            tk.Button(ident, text="SET YOUR NAME (ONE TIME ONLY)", font=("Courier", 10, "bold"), bg="#d35400", fg="#ffffff",
+                      command=set_name_now).pack(anchor="w", padx=15, pady=(0, 10))
+        else:
+            tk.Frame(ident, bg=theme["bar"], height=8).pack()
+
+        # --- Lifetime stats ---
+        st = self.stats
+        played, wins = st["matches_played"], st["wins"]
+        win_rate = f"{(wins / played) * 100:.0f}%" if played else "-"
+        fav = self.get_most_used_card()
+        fav_text = f"{fav[0].replace('_', ' ')} (x{fav[1]})" if fav else "-"
+
+        stats_box = tk.Frame(self.profile_frame, bg=theme["bar"], highlightbackground="#333344", highlightthickness=1)
+        stats_box.pack(fill="x", padx=40, pady=10)
+        for label, value in (("Matches Played", played), ("Wins", wins), ("Losses", st["losses"]),
+                             ("Win Rate", win_rate), ("Most Used Card", fav_text)):
+            row = tk.Frame(stats_box, bg=theme["bar"])
+            row.pack(fill="x", padx=15, pady=3)
+            tk.Label(row, text=label, font=("Courier", 12), fg="#a4b0be", bg=theme["bar"]).pack(side="left")
+            tk.Label(row, text=str(value), font=("Courier", 12, "bold"), fg="#ffffff", bg=theme["bar"]).pack(side="right")
+        tk.Label(stats_box, text="Match stats are tracked from the Profiles update onward.", font=("Courier", 9, "italic"),
+                 fg="#636e72", bg=theme["bar"]).pack(anchor="w", padx=15, pady=(2, 8))
+
+        # --- Season history ---
+        tk.Label(self.profile_frame, text="SEASON HISTORY", font=("Courier", 13, "bold"), fg=theme["accent"], bg=theme["bg"]).pack(anchor="w", padx=40, pady=(10, 0))
+        xp_attr = {1: "player_xp", 2: "player_s2_xp", 3: "player_s3_xp", 4: "player_s4_xp", 5: "player_s5_xp", 6: "player_mini_xp"}
+        hist_box = tk.Frame(self.profile_frame, bg=theme["bg"])
+        hist_box.pack(fill="x", padx=40, pady=5)
+
+        for season_num in sorted(self.SEASON_LABELS):
+            snap = self.season_history.get(str(season_num))
+            max_tier = SEASON_CARD_TABLES[season_num][-1]["tier"]
+            if snap is not None:
+                detail = f"Level {snap.get('level', 0)}/{max_tier}  |  {snap.get('xp', 0)} XP"
+                color = "#ffffff"
+            elif season_num == live_season:
+                detail = f"Level {self.get_season_level(season_num)}/{max_tier}  |  {getattr(self, xp_attr[season_num])} XP  (IN PROGRESS)"
+                color = theme["accent"]
+            else:
+                detail = "Not started" if season_num > live_season else "No data"
+                color = "#636e72"
+            row = tk.Frame(hist_box, bg=theme["bar"], highlightbackground="#333344", highlightthickness=1)
+            row.pack(fill="x", pady=3)
+            tk.Label(row, text=self.SEASON_LABELS[season_num], font=("Courier", 11, "bold"), fg="#a4b0be", bg=theme["bar"], width=20, anchor="w").pack(side="left", padx=10, pady=6)
+            tk.Label(row, text=detail, font=("Courier", 11), fg=color, bg=theme["bar"]).pack(side="left", padx=10)
+
+    def hide_profile_gui(self):
+        if self.profile_frame: self.profile_frame.destroy()
+        self.profile_frame = None
+        if self.draft_frame: self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
     def hide_season_pass_gui(self):
         if self.pass_frame: self.pass_frame.destroy()
         if self.draft_frame: self.draft_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -1582,4 +1794,5 @@ if __name__ == "__main__":
     main_root = tk.Tk()
     app = MutationArenaApp(main_root)
     app.execute_deck_draft_gui()
+    main_root.after(300, app.ensure_player_name)  # one-time name prompt, shown over the draft screen
     main_root.mainloop()
